@@ -1,0 +1,626 @@
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:provider/provider.dart';
+import '../providers/customer_provider.dart';
+import '../providers/vehicle_provider.dart';
+import '../providers/invoice_provider.dart';
+import '../providers/payment_provider.dart';
+import '../providers/demand_letter_provider.dart';
+import '../providers/payment_reminder_provider.dart';
+import '../widgets/glass_container.dart';
+import '../services/reports_service.dart';
+import '../providers/theme_provider.dart';
+import 'dart:io';
+import '../widgets/glass_liquid_theme.dart';
+
+class ReportsScreen extends StatefulWidget {
+  const ReportsScreen({super.key});
+
+  @override
+  State<ReportsScreen> createState() => _ReportsScreenState();
+}
+
+class _ReportsScreenState extends State<ReportsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadData();
+    });
+  }
+
+  void _loadData() {
+    Provider.of<CustomerProvider>(context, listen: false).loadCustomers();
+    Provider.of<VehicleProvider>(context, listen: false).loadVehicles();
+    Provider.of<InvoiceProvider>(context, listen: false).loadInvoices();
+    Provider.of<PaymentProvider>(context, listen: false).loadPayments();
+    Provider.of<DemandLetterProvider>(context, listen: false).loadDemandLetters();
+    Provider.of<PaymentReminderProvider>(context, listen: false).loadReminders();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, child) {
+        return Scaffold(
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            leading: IconButton(
+              icon: const FaIcon(FontAwesomeIcons.arrowLeft, color: Colors.white),
+              onPressed: () => Navigator.pop(context),
+            ),
+            title: Text(
+              'Reports',
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          body: Container(
+            decoration: BoxDecoration(
+              gradient: themeProvider.backgroundGradient,
+            ),
+            child: SafeArea(
+              child: Column(
+                children: [
+                  _buildHeader(),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        children: [
+                          _buildReportCards(),
+                          const SizedBox(height: 24),
+                          _buildQuickActions(),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      child: Row(
+              children: [
+                Icon(
+            FontAwesomeIcons.chartBar,
+                  color: Colors.white,
+            size: 28,
+                ),
+          const SizedBox(width: 16),
+                Text(
+            'Business Reports',
+            style: GoogleFonts.poppins(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReportCards() {
+    return Column(
+      children: [
+        _buildReportCard(
+          'Sales Summary',
+          FontAwesomeIcons.chartLine,
+          GlassLiquidTheme.accentBlue,
+          'View total sales, revenue, and growth metrics',
+          () => _generateSalesReport(),
+        ),
+        const SizedBox(height: 16),
+        _buildReportCard(
+          'Customer Analytics',
+          FontAwesomeIcons.users,
+          Colors.green,
+          'Customer insights, top buyers, and demographics',
+          () => _generateCustomerReport(),
+        ),
+        const SizedBox(height: 16),
+        _buildReportCard(
+          'Vehicle Performance',
+          FontAwesomeIcons.car,
+          Colors.orange,
+          'Best selling vehicles, inventory levels, and sales trends',
+          () => _generateVehicleReport(),
+        ),
+        const SizedBox(height: 16),
+        _buildReportCard(
+          'Financial Overview',
+          FontAwesomeIcons.moneyBill,
+          Colors.purple,
+          'Revenue, expenses, profit margins, and cash flow',
+          () => _generateFinancialReport(),
+        ),
+        const SizedBox(height: 16),
+        _buildReportCard(
+          'Vehicle Inventory',
+          FontAwesomeIcons.warehouse,
+          Colors.teal,
+          'Vehicle stock levels, availability, and status tracking',
+          () => _generateInventoryReport(),
+        ),
+        const SizedBox(height: 16),
+        _buildReportCard(
+          'Payment Collection',
+          FontAwesomeIcons.creditCard,
+          Colors.red,
+          'Payment reminders, demand letters, and collection status',
+          () => _generateCollectionReport(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReportCard(String title, IconData icon, Color color, String description, VoidCallback onTap) {
+    return GlassContainer(
+      padding: const EdgeInsets.all(20),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: FaIcon(
+                    icon,
+                    color: color,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+            Text(
+                        title,
+                        style: GoogleFonts.poppins(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+            Text(
+                        description,
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                    color: Colors.white.withOpacity(0.8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                FaIcon(
+                  FontAwesomeIcons.arrowRight,
+                  color: Colors.white.withOpacity(0.6),
+                  size: 16,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActions() {
+    return GlassContainer(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Quick Actions',
+            style: GoogleFonts.poppins(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionButton(
+                  'Export All Reports',
+                  FontAwesomeIcons.download,
+                  GlassLiquidTheme.accentBlue,
+                  () => _exportAllReports(),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  'Print Reports',
+                  FontAwesomeIcons.print,
+                  Colors.green,
+                  () => _printAllReports(),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton(String title, IconData icon, Color color, VoidCallback onTap) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: color.withOpacity(0.3),
+              width: 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              FaIcon(
+                icon,
+                color: color,
+                size: 24,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 12,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+        );
+      },
+    );
+  }
+
+  void _generateSalesReport() async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Generating Sales Report PDF...'),
+          backgroundColor: GlassLiquidTheme.accentBlue,
+        ),
+      );
+      
+      final reportsService = ReportsService();
+      final pdfBytes = await reportsService.generateSalesSummaryReport();
+      final filePath = await reportsService.saveReportToFile(pdfBytes, 'Sales_Summary_Report');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sales Report saved to: $filePath'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating report: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _generateCustomerReport() async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Generating Customer Report PDF...'),
+          backgroundColor: GlassLiquidTheme.accentBlue,
+        ),
+      );
+      
+      final reportsService = ReportsService();
+      final pdfBytes = await reportsService.generateCustomerAnalyticsReport();
+      final filePath = await reportsService.saveReportToFile(pdfBytes, 'Customer_Analytics_Report');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Customer Report saved to: $filePath'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating report: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _generateProductReport() async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Generating Product Report PDF...'),
+          backgroundColor: GlassLiquidTheme.accentBlue,
+        ),
+      );
+      
+      final reportsService = ReportsService();
+      final pdfBytes = await reportsService.generateProductPerformanceReport();
+      final filePath = await reportsService.saveReportToFile(pdfBytes, 'Product_Performance_Report');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Product Report saved to: $filePath'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating report: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _generateFinancialReport() async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Generating Financial Report PDF...'),
+          backgroundColor: GlassLiquidTheme.accentBlue,
+        ),
+      );
+      
+      final reportsService = ReportsService();
+      final pdfBytes = await reportsService.generateFinancialOverviewReport();
+      final filePath = await reportsService.saveReportToFile(pdfBytes, 'Financial_Overview_Report');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Financial Report saved to: $filePath'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating report: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _generateVehicleReport() async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Generating Vehicle Performance Report PDF...'),
+          backgroundColor: GlassLiquidTheme.accentBlue,
+        ),
+      );
+      
+      final reportsService = ReportsService();
+      final pdfBytes = await reportsService.generateVehiclePerformanceReport();
+      final filePath = await reportsService.saveReportToFile(pdfBytes, 'Vehicle_Performance_Report');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Vehicle Report saved to: $filePath'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating report: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _generateInventoryReport() async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Generating Vehicle Inventory Report PDF...'),
+          backgroundColor: GlassLiquidTheme.accentBlue,
+        ),
+      );
+      
+      final reportsService = ReportsService();
+      final pdfBytes = await reportsService.generateVehicleInventoryReport();
+      final filePath = await reportsService.saveReportToFile(pdfBytes, 'Vehicle_Inventory_Report');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Inventory Report saved to: $filePath'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating report: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _generateCollectionReport() async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Generating Payment Collection Report PDF...'),
+          backgroundColor: GlassLiquidTheme.accentBlue,
+        ),
+      );
+      
+      final reportsService = ReportsService();
+      final pdfBytes = await reportsService.generatePaymentCollectionReport();
+      final filePath = await reportsService.saveReportToFile(pdfBytes, 'Payment_Collection_Report');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Collection Report saved to: $filePath'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating report: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _exportAllReports() async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Exporting all reports...'),
+          backgroundColor: GlassLiquidTheme.accentBlue,
+        ),
+      );
+      
+      final reportsService = ReportsService();
+      
+      // Generate all reports
+      final salesReport = await reportsService.generateSalesSummaryReport();
+      final customerReport = await reportsService.generateCustomerAnalyticsReport();
+      final productReport = await reportsService.generateProductPerformanceReport();
+      final financialReport = await reportsService.generateFinancialOverviewReport();
+      
+      // Save all reports
+      final salesPath = await reportsService.saveReportToFile(salesReport, 'Sales_Summary_Report');
+      final customerPath = await reportsService.saveReportToFile(customerReport, 'Customer_Analytics_Report');
+      final productPath = await reportsService.saveReportToFile(productReport, 'Product_Performance_Report');
+      final financialPath = await reportsService.saveReportToFile(financialReport, 'Financial_Overview_Report');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('All reports exported successfully!\nSales: $salesPath\nCustomer: $customerPath\nProduct: $productPath\nFinancial: $financialPath'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exporting reports: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _printAllReports() async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Preparing reports for printing...'),
+          backgroundColor: GlassLiquidTheme.accentBlue,
+        ),
+      );
+      
+      final reportsService = ReportsService();
+      
+      // Generate and print sales report
+      final salesReport = await reportsService.generateSalesSummaryReport();
+      await reportsService.printReport(salesReport);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sales report sent to printer!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error printing reports: ${e.toString()}'),
+            backgroundColor: Colors.red,
+      ),
+    );
+  }
+}

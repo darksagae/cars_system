@@ -1,0 +1,45 @@
+NSB Motors Uganda - Installation Complete
+==========================================
+
+Congratulations! NSB Motors Uganda has been successfully installed on your system.
+
+WHAT'S NEXT?
+------------
+1. Launch the application from your Desktop shortcut or Start Menu
+2. Use the default login credentials:
+   - Username: NSB
+   - Password: admin
+3. Start adding your customers and vehicles
+4. Create your first invoice
+
+IMPORTANT SECURITY NOTES
+------------------------
+- Change the default password after first login
+- The application stores all data locally on your computer
+- No data is sent to external servers
+- Regular backups are recommended
+
+QUICK START GUIDE
+-----------------
+1. Add Customers: Go to Customers → Add New Customer
+2. Add Vehicles: Go to Vehicle Inventory → Add New Vehicle  
+3. Create Invoice: Go to Invoices → Create New Invoice
+4. Track Payments: Go to Payments → Record Payment
+
+DATA BACKUP
+-----------
+Your data is stored in: %USERPROFILE%\Documents\NSB_Motors_Data\
+- Backup this folder regularly
+- Copy to external drive for safety
+- Restore by copying backup to the same location
+
+SUPPORT
+-------
+Need help? Contact us:
+Email: nsbbsolutions@gmail.com
+Phone: +256394836253
+
+Business Hours: Monday-Friday, 9AM-5PM EAT
+
+Thank you for choosing NSB Motors Uganda!
+Your vehicle sales management system is ready to use.

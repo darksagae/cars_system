@@ -1,0 +1,41 @@
+NSB Motors Uganda - Vehicle Sales Management System
+Copyright (c) 2024 NSB Motors Uganda
+
+This software is proprietary and confidential. All rights reserved.
+
+LICENSE AGREEMENT
+
+By installing and using this software, you agree to the following terms:
+
+1. LICENSE GRANT
+   - NSB Motors Uganda grants you a limited, non-exclusive license to use this software
+   - This license is for internal business use only
+   - You may not redistribute, sell, or modify this software
+
+2. RESTRICTIONS
+   - You may not reverse engineer, decompile, or disassemble this software
+   - You may not create derivative works based on this software
+   - You may not remove or alter any copyright notices
+
+3. DATA PRIVACY
+   - All customer data is stored locally on your computer
+   - No data is transmitted to external servers without your consent
+   - You are responsible for backing up your data
+
+4. SUPPORT
+   - Technical support is available at: nsbbsolutions@gmail.com
+   - Support is provided during business hours (Monday-Friday, 9AM-5PM EAT)
+
+5. WARRANTY
+   - This software is provided "as is" without warranty
+   - NSB Motors Uganda is not liable for any data loss or system damage
+
+6. TERMINATION
+   - This license terminates if you violate any terms
+   - Upon termination, you must cease all use of the software
+
+For questions about this license, contact: nsbbsolutions@gmail.com
+
+NSB Motors Uganda
+Email: nsbbsolutions@gmail.com
+Phone: +256394836253

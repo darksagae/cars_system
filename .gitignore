@@ -1,0 +1,9 @@
+venv/
+*.deb
+.DS_Store
+__pycache__/
+*.pyc
+**/node_modules/
+.dart_tool/
+build/
+
