@@ -8,6 +8,7 @@ import 'services/whatsapp_queue_processor.dart';
 import 'services/email_queue_processor.dart';
 import 'services/background_service.dart';
 import 'services/notification_service.dart';
+import 'services/invoice_sync_service.dart';
 import 'providers/app_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
@@ -38,6 +39,16 @@ void main() async {
     WhatsAppQueueProcessor().start();
     EmailQueueProcessor().start();
     BackgroundService().start(); // Keep app alive for instant WhatsApp opening
+    
+    // Sync invoices in background (non-blocking)
+    InvoiceSyncService().syncAllInvoices().then((count) {
+      if (count > 0) {
+        print('✅ Synced $count invoice(s) on startup');
+      }
+    }).catchError((e) {
+      print('⚠️ Error syncing invoices on startup: $e');
+    });
+    
     print('✅ WhatsApp and Email queue processors started');
   }
   
@@ -128,6 +139,15 @@ class _AuthWrapperState extends State<AuthWrapper> {
           WhatsAppQueueProcessor().start();
           EmailQueueProcessor().start();
           BackgroundService().start(); // Keep app alive for instant WhatsApp opening
+          
+          // Sync invoices in background (non-blocking)
+          InvoiceSyncService().syncAllInvoices().then((count) {
+            if (count > 0) {
+              print('✅ Synced $count invoice(s) on login');
+            }
+          }).catchError((e) {
+            print('⚠️ Error syncing invoices on login: $e');
+          });
         } else if (!isAuthenticated && WhatsAppQueueProcessor().isRunning) {
           WhatsAppQueueProcessor().stop();
           EmailQueueProcessor().stop();

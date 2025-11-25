@@ -2,6 +2,7 @@ import '../database/database_helper.dart';
 import '../models/invoice.dart';
 import '../models/customer.dart';
 import 'client_activity_service.dart';
+import 'pdf/pdf_service.dart';
 
 class InvoiceService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
@@ -61,12 +62,24 @@ class InvoiceService {
       
       print('Invoice creation completed successfully with ID: $invoiceId');
       
-      // Log activity to Supabase (for mobile app visibility)
+      // Generate and save PDF for mobile app access
+      String? localPdfPath;
+      try {
+        final pdfService = PDFService();
+        localPdfPath = await pdfService.savePDFToFile(invoice);
+        print('✅ PDF saved to: $localPdfPath');
+      } catch (e) {
+        print('⚠️ Failed to generate/save PDF: $e');
+        // Don't fail invoice creation if PDF generation fails
+      }
+      
+      // Log activity to Supabase (for mobile app visibility) with PDF path
       try {
         await ClientActivityService().logInvoiceCreated(
           invoice.invoiceNumber,
           customerName: invoice.customer?.name,
           amount: invoice.totalAmount,
+          localPdfPath: localPdfPath,
         );
       } catch (e) {
         // Don't fail invoice creation if activity logging fails

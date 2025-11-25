@@ -610,7 +610,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           case 7:
             return const ThemeScreen();
           case 8:
-            return const ContactForwardingScreen();
+            return ContactForwardingScreen(
+              onClose: () {
+                setState(() {
+                  _selectedIndex = 0;
+                });
+              },
+            );
           default:
             return const GlassDashboardScreen();
         }

@@ -366,20 +366,43 @@ class _CustomersScreenState extends State<CustomersScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: customer.isActive ? Colors.green.withOpacity(0.2) : Colors.red.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        customer.isActive ? 'Active' : 'Inactive',
-                        style: GoogleFonts.poppins(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
-                          color: customer.isActive ? Colors.green : Colors.red,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: customer.isActive ? Colors.green.withOpacity(0.2) : Colors.red.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            customer.isActive ? 'Active' : 'Inactive',
+                            style: GoogleFonts.poppins(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                              color: customer.isActive ? Colors.green : Colors.red,
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        // Delete button - visible to all users (or make it admin-only if needed)
+                        GestureDetector(
+                          onTap: () => _confirmDeleteCustomer(context, customer),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red.withOpacity(0.3)),
+                            ),
+                            child: FaIcon(
+                              FontAwesomeIcons.trash,
+                              size: 14,
+                              color: Colors.red,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -390,49 +413,16 @@ class _CustomersScreenState extends State<CustomersScreen> {
                         color: isHover ? Colors.black : Colors.white,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        FutureBuilder<bool>(
-                          future: AuthService().isCurrentUserAdmin(),
-                          builder: (context, snap) {
-                            if (!(snap.data ?? false)) return const SizedBox.shrink();
-                            return IconButton(
-                              tooltip: 'Delete customer',
-                              icon: const FaIcon(FontAwesomeIcons.trash, size: 16, color: Colors.redAccent),
-                              onPressed: () async {
-                                final confirmed = await showDialog<bool>(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: const Text('Delete customer'),
-                                    content: Text('Are you sure you want to delete "${customer.name}"? This cannot be undone.'),
-                                    actions: [
-                                      TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-                                      TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Delete')),
-                                    ],
-                                  ),
-                                );
-                                if (confirmed == true) {
-                                  final provider = Provider.of<CustomerProvider>(context, listen: false);
-                                  final ok = await provider.deleteCustomer(customer.id!);
-                                  if (!mounted) return;
-                                  if (ok) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Customer deleted'), backgroundColor: Colors.green),
-                                    );
-                                  } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Failed to delete customer'), backgroundColor: Colors.red),
-                                    );
-                                  }
-                                }
-                              },
-                            );
-                          },
+                    if (customer.totalInvoices > 0) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '${customer.totalInvoices} invoice${customer.totalInvoices == 1 ? '' : 's'}',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: isHover ? Colors.black87 : Colors.white.withOpacity(0.7),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ],
                 ),
               ],
@@ -441,5 +431,176 @@ class _CustomersScreenState extends State<CustomersScreen> {
         ),
       ),
     );
+  }
+
+  // Confirm and delete customer
+  Future<void> _confirmDeleteCustomer(BuildContext context, Customer customer) async {
+    // Check if customer has invoices
+    bool hasInvoices = customer.totalInvoices > 0;
+    
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1F3A),
+        title: Text(
+          'Delete Customer',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to delete "${customer.name}"?',
+              style: GoogleFonts.poppins(
+                color: Colors.white70,
+              ),
+            ),
+            if (hasInvoices) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.withOpacity(0.5)),
+                ),
+                child: Row(
+                  children: [
+                    FaIcon(
+                      FontAwesomeIcons.triangleExclamation,
+                      color: Colors.orange,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Warning: This customer has ${customer.totalInvoices} invoice${customer.totalInvoices == 1 ? '' : 's'}. Deleting this customer will also delete all associated invoices, payments, and related data.',
+                        style: GoogleFonts.poppins(
+                          color: Colors.orange,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Text(
+              'This action cannot be undone.',
+              style: GoogleFonts.poppins(
+                color: Colors.red,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(
+                color: Colors.white70,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.poppins(
+                color: Colors.red,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final provider = Provider.of<CustomerProvider>(context, listen: false);
+      final id = customer.id;
+      
+      if (id != null) {
+        // Show loading indicator
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Deleting customer...',
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: Colors.blue,
+              duration: const Duration(seconds: 1),
+            ),
+          );
+        }
+
+        final success = await provider.deleteCustomer(id);
+        
+        if (context.mounted) {
+          if (success) {
+            // Reload customers to refresh the list
+            _loadCustomers();
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  '✅ Customer "${customer.name}" deleted successfully',
+                  style: GoogleFonts.poppins(),
+                ),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  '❌ Failed to delete customer',
+                  style: GoogleFonts.poppins(),
+                ),
+                backgroundColor: Colors.red,
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
+        }
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '❌ Invalid customer ID',
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '❌ Error deleting customer: ${e.toString()}',
+              style: GoogleFonts.poppins(),
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 }

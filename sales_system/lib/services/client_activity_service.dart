@@ -1,6 +1,6 @@
+import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../config/supabase_config.dart';
 import 'remote_command_service.dart';
 
 /// Service for logging client activities to Supabase
@@ -85,15 +85,79 @@ class ClientActivityService {
   }
 
   /// Helper methods for common activities
-  Future<bool> logInvoiceCreated(String invoiceNumber, {String? customerName, double? amount}) async {
+  Future<bool> logInvoiceCreated(String invoiceNumber, {String? customerName, double? amount, String? localPdfPath}) async {
+    String? pdfUrl;
+    
+    // Upload PDF to Supabase Storage if local path is provided
+    if (localPdfPath != null && localPdfPath.isNotEmpty) {
+      try {
+        pdfUrl = await _uploadPdfToStorage(localPdfPath, invoiceNumber);
+        if (pdfUrl != null) {
+          print('✅ Invoice PDF uploaded to Supabase Storage: $pdfUrl');
+        }
+      } catch (e) {
+        print('⚠️ Failed to upload PDF to Supabase Storage: $e');
+        // Continue without PDF URL - invoice will still be logged
+      }
+    }
+    
     return logActivity(
       action: 'create_invoice',
       metadata: {
         'invoice_number': invoiceNumber,
         if (customerName != null) 'customer_name': customerName,
         if (amount != null) 'amount': amount,
+        if (localPdfPath != null) 'local_pdf_path': localPdfPath,
+        if (pdfUrl != null) 'pdf_url': pdfUrl, // Add PDF URL to metadata
       },
     );
+  }
+
+  /// Upload PDF to Supabase Storage
+  Future<String?> _uploadPdfToStorage(String localPdfPath, String invoiceNumber) async {
+    try {
+      if (!_isInitialized) {
+        await initialize();
+      }
+
+      if (_client == null) {
+        print('⚠️ Cannot upload PDF: Supabase client not initialized');
+        return null;
+      }
+
+      // Read PDF file
+      final file = File(localPdfPath);
+      if (!await file.exists()) {
+        print('⚠️ PDF file not found: $localPdfPath');
+        return null;
+      }
+
+      final pdfBytes = await file.readAsBytes();
+
+      // Upload to Supabase Storage
+      final fileName = 'invoices/${DateTime.now().millisecondsSinceEpoch}_invoice_$invoiceNumber.pdf';
+      
+      await _client!.storage
+          .from('whatsapp_attachments') // Reuse same bucket
+          .uploadBinary(
+            fileName,
+            pdfBytes,
+            fileOptions: const FileOptions(
+              contentType: 'application/pdf',
+              upsert: false,
+            ),
+          );
+      
+      // Get public URL
+      final url = _client!.storage
+          .from('whatsapp_attachments')
+          .getPublicUrl(fileName);
+      
+      return url;
+    } catch (e) {
+      print('❌ Error uploading PDF to Supabase Storage: $e');
+      return null;
+    }
   }
 
   Future<bool> logInvoiceUpdated(String invoiceNumber) async {
@@ -126,6 +190,15 @@ class ClientActivityService {
   Future<bool> logCustomerUpdated(String customerName) async {
     return logActivity(
       action: 'update_customer',
+      metadata: {
+        'customer_name': customerName,
+      },
+    );
+  }
+
+  Future<bool> logCustomerDeleted(String customerName) async {
+    return logActivity(
+      action: 'delete_customer',
       metadata: {
         'customer_name': customerName,
       },

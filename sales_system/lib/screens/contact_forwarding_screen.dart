@@ -6,10 +6,13 @@ import '../services/whatsapp_message_tracking_service.dart';
 import '../services/whatsapp_auto_service.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/glass_liquid_theme.dart';
+import '../providers/theme_provider.dart';
 import 'dart:async';
 
 class ContactForwardingScreen extends StatefulWidget {
-  const ContactForwardingScreen({Key? key}) : super(key: key);
+  final VoidCallback? onClose;
+
+  const ContactForwardingScreen({Key? key, this.onClose}) : super(key: key);
 
   @override
   State<ContactForwardingScreen> createState() => _ContactForwardingScreenState();
@@ -131,43 +134,58 @@ class _ContactForwardingScreenState extends State<ContactForwardingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
-      appBar: AppBar(
-        title: Text(
-          'Forwarded Contacts',
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, child) {
+        return Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            title: Text(
+              'Forwarded Contacts',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: () {
+                if (widget.onClose != null) {
+                  widget.onClose!();
+                } else if (Navigator.of(context).canPop()) {
+                  Navigator.of(context).pop();
+                }
+              },
+            ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.refresh, color: Colors.white),
+                onPressed: _loadContacts,
+              ),
+            ],
           ),
-        ),
-        backgroundColor: GlassLiquidTheme.accentBlue,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: _loadContacts,
+          body: Container(
+            decoration: BoxDecoration(
+              gradient: themeProvider.backgroundGradient,
+            ),
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator(color: Colors.white))
+                : _contacts.isEmpty
+                    ? _buildEmptyState()
+                    : RefreshIndicator(
+                        onRefresh: _loadContacts,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: _contacts.length,
+                          itemBuilder: (context, index) {
+                            return _buildContactCard(_contacts[index]);
+                          },
+                        ),
+                      ),
           ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Colors.white))
-          : _contacts.isEmpty
-              ? _buildEmptyState()
-              : RefreshIndicator(
-                  onRefresh: _loadContacts,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _contacts.length,
-                    itemBuilder: (context, index) {
-                      return _buildContactCard(_contacts[index]);
-                    },
-                  ),
-                ),
+        );
+      },
     );
   }
 

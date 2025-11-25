@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../services/whatsapp_auto_service.dart';
 import '../widgets/glass_liquid_theme.dart';
 import '../widgets/glass_container.dart';
 import 'dart:async';
+import '../providers/theme_provider.dart';
 
 class WhatsAppSetupScreen extends StatefulWidget {
   const WhatsAppSetupScreen({Key? key}) : super(key: key);
@@ -134,38 +136,49 @@ class _WhatsAppSetupScreenState extends State<WhatsAppSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
-      appBar: AppBar(
-        title: Text(
-          'WhatsApp Setup',
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, child) {
+        return Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            title: Text(
+              'WhatsApp Setup',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: () => Navigator.pop(context),
+            ),
           ),
-        ),
-        backgroundColor: GlassLiquidTheme.accentBlue,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildStatusCard(),
-            const SizedBox(height: 24),
-            if (!_isServiceRunning) _buildServiceNotRunningCard(),
-            if (_isServiceRunning && _status == 'qr_ready') _buildQRCodeCard(),
-            if (_isServiceRunning && _isReady) _buildReadyCard(),
-            if (_isServiceRunning && _status != 'qr_ready' && !_isReady)
-              _buildStatusMessageCard(),
-          ],
-        ),
-      ),
+          body: Container(
+            decoration: BoxDecoration(
+              gradient: themeProvider.backgroundGradient,
+            ),
+            child: SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildStatusCard(),
+                    const SizedBox(height: 24),
+                    if (!_isServiceRunning) _buildServiceNotRunningCard(),
+                    if (_isServiceRunning && _status == 'qr_ready') _buildQRCodeCard(),
+                    if (_isServiceRunning && _isReady) _buildReadyCard(),
+                    if (_isServiceRunning && _status != 'qr_ready' && !_isReady)
+                      _buildStatusMessageCard(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

@@ -132,11 +132,34 @@ class CustomerService {
   // Delete customer
   Future<int> deleteCustomer(int id) async {
     final db = await _dbHelper.database;
-    return await db.delete(
+    
+    // Get customer name before deletion for logging
+    String? customerName;
+    try {
+      final customer = await getCustomerById(id);
+      customerName = customer?.name;
+    } catch (e) {
+      print('⚠️ Could not get customer name for logging: $e');
+    }
+    
+    // Delete customer (cascade will handle related invoices, payments, etc.)
+    final result = await db.delete(
       'customers',
       where: 'id = ?',
       whereArgs: [id],
     );
+    
+    // Log activity to Supabase (for mobile app visibility)
+    if (customerName != null && result > 0) {
+      try {
+        await ClientActivityService().logCustomerDeleted(customerName);
+      } catch (e) {
+        // Don't fail customer deletion if activity logging fails
+        print('⚠️ Failed to log customer deletion activity: $e');
+      }
+    }
+    
+    return result;
   }
 
   // Update customer statistics

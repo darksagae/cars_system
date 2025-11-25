@@ -30,6 +30,7 @@ class InvoiceDetailScreen extends StatefulWidget {
 class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
   late Invoice _invoice;
   bool _isLoading = false;
+  bool _isSendingWhatsApp = false;
 
   @override
   void initState() {
@@ -706,6 +707,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                   FontAwesomeIcons.whatsapp,
                   Colors.green,
                   () => _sendWhatsAppInvoice(context, _invoice),
+                  isLoading: _isSendingWhatsApp,
                 ),
               ),
               const SizedBox(width: 12),
@@ -724,11 +726,11 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     );
   }
 
-  Widget _buildActionButton(String title, IconData icon, Color color, VoidCallback onTap) {
+  Widget _buildActionButton(String title, IconData icon, Color color, VoidCallback onTap, {bool isLoading = false}) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: isLoading ? null : onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.all(16),
@@ -742,16 +744,25 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           ),
           child: Column(
             children: [
-              FaIcon(
-                icon,
-                color: color,
-                size: 24,
-              ),
+              isLoading
+                  ? SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(color),
+                      ),
+                    )
+                  : FaIcon(
+                      icon,
+                      color: color,
+                      size: 24,
+                    ),
               const SizedBox(height: 8),
               Text(
-                title,
+                isLoading ? 'Processing...' : title,
                 style: GoogleFonts.poppins(
-                  color: Colors.white,
+                  color: isLoading ? Colors.white70 : Colors.white,
                   fontWeight: FontWeight.w500,
                   fontSize: 12,
                 ),
@@ -832,6 +843,11 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
   }
 
   void _sendWhatsAppInvoice(BuildContext context, Invoice invoice) async {
+    // Prevent multiple simultaneous sends
+    if (_isSendingWhatsApp) {
+      return;
+    }
+
     try {
       if (invoice.customer?.phone == null || invoice.customer!.phone.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -845,6 +861,50 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         );
         return;
       }
+
+      // Set loading state
+      setState(() {
+        _isSendingWhatsApp = true;
+      });
+
+      // Show processing dialog
+      if (!context.mounted) return;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => WillPopScope(
+          onWillPop: () async => false, // Prevent closing during processing
+          child: AlertDialog(
+            backgroundColor: const Color(0xFF1A1F3A),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Processing WhatsApp message...',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 16,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Please wait while we queue your message',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white70,
+                    fontSize: 12,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 
       // Use Supabase queue system (works from anywhere - no WiFi required)
       try {
@@ -867,6 +927,11 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           messageType: 'invoice',
       );
 
+      // Close processing dialog
+      if (context.mounted) {
+        Navigator.of(context).pop();
+      }
+
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -882,6 +947,11 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         );
       }
     } catch (e) {
+      // Close processing dialog if still open
+      if (context.mounted) {
+        Navigator.of(context).pop();
+      }
+      
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -895,18 +965,12 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           );
         }
       }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Error: ${e.toString()}',
-              style: GoogleFonts.poppins(),
-            ),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 5),
-          ),
-        );
+    } finally {
+      // Reset loading state
+      if (mounted) {
+        setState(() {
+          _isSendingWhatsApp = false;
+        });
       }
     }
   }

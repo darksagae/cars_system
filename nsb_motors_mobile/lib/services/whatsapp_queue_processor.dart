@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'supabase_service.dart';
 import 'notification_service.dart';
+import 'local_database_service.dart';
 
 /// WhatsApp Queue Processor
 /// 
@@ -190,6 +191,9 @@ class WhatsAppQueueProcessor {
 
         // Also store in whatsapp_messages table for tracking
         await _storeInMessagesTable(message);
+        
+        // Save invoice locally if it's an invoice message
+        await _saveInvoiceLocally(message, mediaPath);
 
         print('✅ Message sent successfully: $messageId');
       } else {
@@ -361,5 +365,140 @@ class WhatsAppQueueProcessor {
       // Non-critical, continue
     }
   }
-}
+  
+  /// Save invoice locally if it's an invoice message
+  Future<void> _saveInvoiceLocally(Map<String, dynamic> message, String? mediaPath) async {
+    try {
+      // Check if this is an invoice message
+      final messageType = message['message_type'] as String?;
+      if (messageType != 'invoice') {
+        return; // Not an invoice, nothing to save
+      }
+      
+      // Extract invoice information from message content
+      final messageContent = message['message_content'] as String;
+      final invoiceNumber = _extractInvoiceNumber(messageContent);
+      final customerName = _extractCustomerName(messageContent);
+      final totalAmount = _extractTotalAmount(messageContent);
+      final invoiceDate = _extractInvoiceDate(messageContent);
+      
+      if (invoiceNumber.isEmpty) {
+        print('⚠️ Could not extract invoice information, skipping local save');
+        return;
+      }
+      
+      // Download and save PDF permanently if mediaPath is provided
+      String? localPdfPath;
+      if (mediaPath != null && mediaPath.isNotEmpty) {
+        localPdfPath = await _downloadAndSavePdf(mediaPath, invoiceNumber);
+      }
+      
+      // Save to local database
+      final localDb = LocalDatabaseService();
+      final result = await localDb.saveInvoice(
+        supabaseId: message['id'] as String,
+        clientId: message['sent_by_machine_id'] as String? ?? 'unknown',
+        invoiceNumber: invoiceNumber,
+        customerName: customerName,
+        customerPhone: message['phone_number'] as String,
+        totalAmount: totalAmount,
+        invoiceDate: invoiceDate,
+        status: 'sent',
+        pdfUrl: mediaPath,
+        localPdfPath: localPdfPath,
+        sentAt: DateTime.now().toIso8601String(),
+      );
+      
+      print('✅ Invoice saved locally with ID: $result');
+    } catch (e) {
+      print('⚠️ Error saving invoice locally: $e');
+    }
+  }
+  
+  /// Download and save PDF permanently to local storage
+  Future<String?> _downloadAndSavePdf(String pdfUrl, String invoiceNumber) async {
+    try {
+      print('📥 Downloading PDF for permanent storage: $pdfUrl');
+      
+      // Download PDF from URL
+      final response = await http.get(Uri.parse(pdfUrl));
+      if (response.statusCode != 200) {
+        throw Exception('Failed to download PDF: HTTP ${response.statusCode}');
+      }
 
+      // Save PDF to application documents directory
+      final appDir = await getApplicationDocumentsDirectory();
+      final fileName = 'invoice_${invoiceNumber}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final pdfFile = File('${appDir.path}/$fileName');
+      await pdfFile.writeAsBytes(response.bodyBytes);
+      
+      print('✅ PDF permanently saved: ${pdfFile.path}');
+      return pdfFile.path;
+    } catch (e) {
+      print('❌ Error downloading and saving PDF: $e');
+      return null;
+    }
+  }
+  
+  /// Extract invoice number from message content
+  String _extractInvoiceNumber(String messageContent) {
+    // Look for patterns like "Invoice No: INV-001" or "INV-001"
+    final invoiceRegex = RegExp(r'(?:Invoice\s*(?:No\.?|Number)[:\s]*)([A-Z0-9\-]+)', caseSensitive: false);
+    final match = invoiceRegex.firstMatch(messageContent);
+    if (match != null) {
+      return match.group(1) ?? '';
+    }
+    
+    // Fallback: look for any pattern like INV-001
+    final fallbackRegex = RegExp(r'\b([A-Z]{3,}-\d{3,})\b');
+    final fallbackMatch = fallbackRegex.firstMatch(messageContent);
+    return fallbackMatch?.group(1) ?? '';
+  }
+  
+  /// Extract customer name from message content
+  String _extractCustomerName(String messageContent) {
+    // Look for patterns like "Dear John Doe" or "Customer: John Doe"
+    final customerRegex = RegExp(r'(?:Dear|Customer|Client)[:\s]*([A-Za-z\s]+?)(?:,|\n|$)', caseSensitive: false);
+    final match = customerRegex.firstMatch(messageContent);
+    if (match != null) {
+      return match.group(1)?.trim() ?? 'Unknown Customer';
+    }
+    
+    // Fallback: return generic name
+    return 'Customer';
+  }
+  
+  /// Extract total amount from message content
+  double _extractTotalAmount(String messageContent) {
+    // Look for patterns like "Total: UGX 1,000,000" or "UGX 1,000,000"
+    final amountRegex = RegExp(r'(?:Total[:\s]*)?[Uu][Gg][Xx][\s:]*([0-9,]+(?:\.[0-9]{2})?)');
+    final match = amountRegex.firstMatch(messageContent);
+    if (match != null) {
+      final amountStr = match.group(1)?.replaceAll(',', '') ?? '0';
+      return double.tryParse(amountStr) ?? 0.0;
+    }
+    
+    // Fallback: look for any number pattern
+    final fallbackRegex = RegExp(r'[\d,]+(?:\.\d{2})?');
+    final fallbackMatch = fallbackRegex.firstMatch(messageContent);
+    if (fallbackMatch != null) {
+      final amountStr = fallbackMatch.group(0)?.replaceAll(',', '') ?? '0';
+      return double.tryParse(amountStr) ?? 0.0;
+    }
+    
+    return 0.0;
+  }
+  
+  /// Extract invoice date from message content
+  String _extractInvoiceDate(String messageContent) {
+    // Look for date patterns like "Date: 2025-01-15" or "2025-01-15"
+    final dateRegex = RegExp(r'(?:Date[:\s]*)?(\d{4}-\d{2}-\d{2})');
+    final match = dateRegex.firstMatch(messageContent);
+    if (match != null) {
+      return match.group(1) ?? DateTime.now().toIso8601String();
+    }
+    
+    // Fallback: return current date
+    return DateTime.now().toIso8601String();
+  }
+}

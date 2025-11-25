@@ -279,31 +279,24 @@ class PDFService {
               children: [
                 // Document Title - QUOTATION
                 _buildDocumentTitle(invoice, logoImage, logoPdfImage, locationIcon, whatsappIcon, facebookIcon, instagramIcon, xIcon, tiktokIcon, gmailIcon),
-                pw.SizedBox(height: 2),
                 
                 // Customer Information Section
                 _buildCustomerInformation(customer),
-                pw.SizedBox(height: 2),
                 
                 // Vehicle Details Section
                 _buildVehicleDetails(invoice),
-                pw.SizedBox(height: 2),
                 
                 // First Installment Section
                 _buildFirstInstallmentTable(invoice, parsed),
-                pw.SizedBox(height: 2),
                 
                 // Second Installment Section
                 _buildSecondInstallmentTable(invoice, parsed),
-                pw.SizedBox(height: 2),
                 
                 // Registration Process Section
                 _buildRegistrationProcessSection(invoice, parsed),
-                pw.SizedBox(height: 8),
                 
                 // Combined Bank Information Footer
                 _buildBankFooterSection(),
-                pw.SizedBox(height: 10),
               ],
             ),
           );
@@ -1577,10 +1570,7 @@ class PDFService {
         iconImage = null;
     }
 
-    if (iconImage == null) {
-      return pw.SizedBox.shrink();
-    }
-
+    // Always return a consistent-sized container for proper alignment
     return pw.Container(
       width: 14,
       height: 14,
@@ -1588,10 +1578,12 @@ class PDFService {
       decoration: pw.BoxDecoration(
         borderRadius: pw.BorderRadius.circular(3),
       ),
-      child: pw.Image(
-        iconImage,
-        fit: pw.BoxFit.contain,
-      ),
+      child: iconImage != null
+          ? pw.Image(
+              iconImage,
+              fit: pw.BoxFit.contain,
+            )
+          : pw.SizedBox.shrink(),
     );
   }
 
@@ -1601,12 +1593,13 @@ class PDFService {
     final colors = _getDynamicColors(invoice);
     return pw.Container(
       width: double.infinity,
-      padding: pw.EdgeInsets.all(5),
+      padding: pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
       child: pw.Column(
         children: [
           // Company Header Row
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               // Logo Section (Left)
               pw.Container(
@@ -1618,7 +1611,7 @@ class PDFService {
                     (logoPdfImage != null)
                         ? pw.Container(
                             width: 80,
-                            height: 60,
+                            height: 50,
                             child: pw.Image(
                               logoPdfImage,
                               fit: pw.BoxFit.contain,
@@ -1626,7 +1619,7 @@ class PDFService {
                           )
                         : pw.Container(
                             width: 80,
-                            height: 60,
+                            height: 50,
                             decoration: pw.BoxDecoration(
                               color: PdfColors.green600,
                               borderRadius: pw.BorderRadius.circular(8),
@@ -1642,7 +1635,7 @@ class PDFService {
                               ),
                             ),
                           ),
-                    pw.SizedBox(height: 5),
+                    pw.SizedBox(height: 2),
                     // Tagline
                     pw.Text(
                       'People • Product • Growth',
@@ -1655,6 +1648,13 @@ class PDFService {
                 ),
               ),
               
+              // First Golden Line Separator
+              pw.Container(
+                width: 2,
+                height: 70,
+                color: PdfColor.fromInt(0xFFD4AF37), // Golden color
+              ),
+              
               // Address Section (Middle) with location icon
               pw.Expanded(
                 child: pw.Column(
@@ -1663,15 +1663,15 @@ class PDFService {
                     // Location icon above address (centered, larger size)
                     if (locationIcon != null)
                       pw.Container(
-                        width: 30,
-                        height: 30,
-                        padding: pw.EdgeInsets.all(2),
+                        width: 24,
+                        height: 24,
+                        padding: pw.EdgeInsets.all(1),
                         child: pw.Image(
                           locationIcon,
                           fit: pw.BoxFit.contain,
                         ),
                       ),
-                    pw.SizedBox(height: 3),
+                    pw.SizedBox(height: 1),
                     // Address text (centered)
                     pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.center,
@@ -1692,53 +1692,108 @@ class PDFService {
                 ),
               ),
               
+              // Second Golden Line Separator
+              pw.Container(
+                width: 2,
+                height: 70,
+                color: PdfColor.fromInt(0xFFD4AF37), // Golden color
+              ),
+              
               // Contact Section (Right) with icons
               pw.Container(
                 width: 200,
+                alignment: pw.Alignment.topLeft,
                 child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  mainAxisAlignment: pw.MainAxisAlignment.start,
                   children: [
                     // Phone with WhatsApp icon
                     pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.end,
+                      mainAxisAlignment: pw.MainAxisAlignment.start,
+                      crossAxisAlignment: pw.CrossAxisAlignment.center,
                       children: [
-                        _buildSocialIcon('whatsapp', locationIcon, whatsappIcon, facebookIcon, instagramIcon, xIcon, tiktokIcon, gmailIcon),
-                        pw.SizedBox(width: 5),
-                        pw.Text(
-                          '+256 394 836253 / +256 752 128406',
-                          style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                        pw.SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: pw.Center(
+                            child: _buildSocialIcon('whatsapp', locationIcon, whatsappIcon, facebookIcon, instagramIcon, xIcon, tiktokIcon, gmailIcon),
+                          ),
+                        ),
+                        pw.SizedBox(width: 6),
+                        pw.Flexible(
+                          child: pw.Text(
+                            '+256 394 836253 / +256 752 128406',
+                            style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                            textAlign: pw.TextAlign.left,
+                          ),
                         ),
                       ],
                     ),
-                    pw.SizedBox(height: 3),
+                    pw.SizedBox(height: 4),
                     // Email with envelope icon
                     pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.end,
+                      mainAxisAlignment: pw.MainAxisAlignment.start,
+                      crossAxisAlignment: pw.CrossAxisAlignment.center,
                       children: [
-                        _buildSocialIcon('gmail', locationIcon, whatsappIcon, facebookIcon, instagramIcon, xIcon, tiktokIcon, gmailIcon),
-                        pw.SizedBox(width: 5),
-                        pw.Text(
-                          'nsbbsolutions@gmail.com',
-                          style: pw.TextStyle(fontSize: 10, color: PdfColors.black, fontStyle: pw.FontStyle.italic),
+                        pw.SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: pw.Center(
+                            child: _buildSocialIcon('gmail', locationIcon, whatsappIcon, facebookIcon, instagramIcon, xIcon, tiktokIcon, gmailIcon),
+                          ),
+                        ),
+                        pw.SizedBox(width: 6),
+                        pw.Flexible(
+                          child: pw.Text(
+                            'nsbbsolutions@gmail.com',
+                            style: pw.TextStyle(fontSize: 10, color: PdfColors.black, fontStyle: pw.FontStyle.italic),
+                            textAlign: pw.TextAlign.left,
+                          ),
                         ),
                       ],
                     ),
-                    pw.SizedBox(height: 3),
+                    pw.SizedBox(height: 4),
                     // Social Media Icons
                     pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.end,
+                      mainAxisAlignment: pw.MainAxisAlignment.start,
+                      crossAxisAlignment: pw.CrossAxisAlignment.center,
                       children: [
-                        _buildSocialIcon('facebook', locationIcon, whatsappIcon, facebookIcon, instagramIcon, xIcon, tiktokIcon, gmailIcon),
-                        pw.SizedBox(width: 3),
-                        _buildSocialIcon('x', locationIcon, whatsappIcon, facebookIcon, instagramIcon, xIcon, tiktokIcon, gmailIcon),
-                        pw.SizedBox(width: 3),
-                        _buildSocialIcon('tiktok', locationIcon, whatsappIcon, facebookIcon, instagramIcon, xIcon, tiktokIcon, gmailIcon),
-                        pw.SizedBox(width: 3),
-                        _buildSocialIcon('instagram', locationIcon, whatsappIcon, facebookIcon, instagramIcon, xIcon, tiktokIcon, gmailIcon),
-                        pw.SizedBox(width: 5),
+                        pw.SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: pw.Center(
+                            child: _buildSocialIcon('facebook', locationIcon, whatsappIcon, facebookIcon, instagramIcon, xIcon, tiktokIcon, gmailIcon),
+                          ),
+                        ),
+                        pw.SizedBox(width: 4),
+                        pw.SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: pw.Center(
+                            child: _buildSocialIcon('x', locationIcon, whatsappIcon, facebookIcon, instagramIcon, xIcon, tiktokIcon, gmailIcon),
+                          ),
+                        ),
+                        pw.SizedBox(width: 4),
+                        pw.SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: pw.Center(
+                            child: _buildSocialIcon('tiktok', locationIcon, whatsappIcon, facebookIcon, instagramIcon, xIcon, tiktokIcon, gmailIcon),
+                          ),
+                        ),
+                        pw.SizedBox(width: 4),
+                        pw.SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: pw.Center(
+                            child: _buildSocialIcon('instagram', locationIcon, whatsappIcon, facebookIcon, instagramIcon, xIcon, tiktokIcon, gmailIcon),
+                          ),
+                        ),
+                        pw.SizedBox(width: 6),
                         pw.Text(
                           'nsb motors ug',
                           style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+                          textAlign: pw.TextAlign.left,
                         ),
                       ],
                     ),
@@ -1749,12 +1804,12 @@ class PDFService {
           ),
           
           // Horizontal Line
-          pw.SizedBox(height: 5),
+          pw.SizedBox(height: 2),
           pw.Container(
             height: 1,
             color: PdfColors.grey400,
           ),
-          pw.SizedBox(height: 5),
+          pw.SizedBox(height: 2),
           
           // Document Title Row
           pw.Row(
@@ -1777,6 +1832,19 @@ class PDFService {
               ),
             ],
           ),
+          
+          // Invoice Number (Centered)
+          pw.SizedBox(height: 1),
+          pw.Center(
+            child: pw.Text(
+              'Invoice No: ${invoice.invoiceNumber}',
+              style: pw.TextStyle(
+                fontSize: 13,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.black,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1787,7 +1855,7 @@ class PDFService {
     // Use table for proper alignment
     return pw.Container(
       width: double.infinity,
-      padding: pw.EdgeInsets.symmetric(vertical: 2),
+      padding: pw.EdgeInsets.symmetric(vertical: 1),
       child: pw.Table(
         columnWidths: {
           0: pw.FlexColumnWidth(1.5), // Label column
@@ -1858,7 +1926,7 @@ class PDFService {
     // Use table for proper alignment
     return pw.Container(
       width: double.infinity,
-      padding: pw.EdgeInsets.symmetric(vertical: 2),
+      padding: pw.EdgeInsets.symmetric(vertical: 1),
       child: pw.Table(
         columnWidths: {
           0: pw.FlexColumnWidth(1.5), // Label column
@@ -1982,7 +2050,7 @@ class PDFService {
   pw.Widget _buildFirstInstallmentTable(Invoice invoice, _ParsedInvoiceNotes parsed) {
     return pw.Container(
       width: double.infinity,
-      padding: pw.EdgeInsets.symmetric(vertical: 2),
+      padding: pw.EdgeInsets.symmetric(vertical: 1),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
@@ -1994,7 +2062,7 @@ class PDFService {
               color: PdfColors.black,
             ),
           ),
-          pw.SizedBox(height: 5),
+          pw.SizedBox(height: 3),
           pw.Table(
             border: pw.TableBorder.all(color: PdfColors.black),
             columnWidths: {
@@ -2193,7 +2261,7 @@ class PDFService {
 
     return pw.Container(
       width: double.infinity,
-      padding: pw.EdgeInsets.symmetric(vertical: 2),
+      padding: pw.EdgeInsets.symmetric(vertical: 1),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
@@ -2205,7 +2273,7 @@ class PDFService {
               color: PdfColors.black,
             ),
           ),
-          pw.SizedBox(height: 5),
+          pw.SizedBox(height: 3),
           pw.Table(
             border: pw.TableBorder.all(color: PdfColors.black),
             columnWidths: {
@@ -2313,7 +2381,7 @@ class PDFService {
     print('=== REGISTRATION PROCESS SECTION BEING BUILT ==='); // Debug print
     return pw.Container(
       width: double.infinity,
-      padding: pw.EdgeInsets.symmetric(vertical: 2),
+      padding: pw.EdgeInsets.symmetric(vertical: 1),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
@@ -2325,7 +2393,7 @@ class PDFService {
               color: PdfColors.black,
             ),
           ),
-          pw.SizedBox(height: 5),
+          pw.SizedBox(height: 3),
           pw.Table(
             border: pw.TableBorder.all(color: PdfColors.black),
             columnWidths: {

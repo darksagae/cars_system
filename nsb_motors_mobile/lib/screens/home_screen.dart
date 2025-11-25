@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../providers/app_provider.dart';
 import 'dashboard_screen.dart';
 import 'clients_screen.dart';
+import 'invoices_screen.dart';
 import 'database_management_screen.dart';
 import 'settings_screen.dart';
 import 'whatsapp_server_screen.dart';
@@ -21,6 +22,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<Widget> _screens = [
     const DashboardScreen(),
     const ClientsScreen(),
+    const InvoicesScreen(),
     const DatabaseManagementScreen(),
     const SettingsScreen(),
   ];
@@ -33,6 +35,10 @@ class _HomeScreenState extends State<HomeScreen> {
     const BottomNavigationBarItem(
       icon: Icon(Icons.computer),
       label: 'Clients',
+    ),
+    const BottomNavigationBarItem(
+      icon: Icon(Icons.receipt_long),
+      label: 'Invoices',
     ),
     const BottomNavigationBarItem(
       icon: Icon(Icons.storage),
@@ -88,6 +94,8 @@ class _HomeScreenState extends State<HomeScreen> {
             });
           },
           type: BottomNavigationBarType.fixed,
+          selectedFontSize: 12,
+          unselectedFontSize: 12,
           backgroundColor: Colors.transparent,
           elevation: 0,
           selectedItemColor: Theme.of(context).colorScheme.primary,

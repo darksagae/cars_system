@@ -382,12 +382,32 @@ class SupabaseService {
           .limit(limit ?? 50);
       
       // Ensure strong typing of map entries
-      final List<Map<String, dynamic>> typed = (response as List)
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
+      final List<Map<String, dynamic>> typed = [];
+      for (var item in response as List) {
+        try {
+          final mapItem = item as Map<dynamic, dynamic>;
+          final parameters = mapItem['parameters'];
+          if (parameters != null && parameters is Map) {
+            // Convert parameters to proper type
+            mapItem['parameters'] = Map<String, dynamic>.from(parameters as Map<dynamic, dynamic>);
+          } else if (parameters != null) {
+            print('⚠️ Unexpected parameters type: ${parameters.runtimeType} - $parameters');
+            mapItem['parameters'] = <String, dynamic>{};
+          } else {
+            mapItem['parameters'] = <String, dynamic>{};
+          }
+          typed.add(Map<String, dynamic>.from(mapItem));
+        } catch (itemError, stackTrace) {
+          print('❌ Error processing remote command item: $itemError');
+          print('   Item data: $item');
+          print('   Stack trace: $stackTrace');
+        }
+      }
+      
       return typed;
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('Error fetching remote commands: $e');
+      print('Stack trace: $stackTrace');
       return [];
     }
   }
@@ -416,75 +436,210 @@ class SupabaseService {
           .limit(limit ?? 50);
       
       // Ensure strong typing of map entries
-      final List<Map<String, dynamic>> typed = (response as List)
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
+      final List<Map<String, dynamic>> typed = [];
+      for (var item in response as List) {
+        try {
+          final mapItem = item as Map<dynamic, dynamic>;
+          final metadata = mapItem['metadata'];
+          if (metadata != null && metadata is Map) {
+            // Convert metadata to proper type
+            mapItem['metadata'] = Map<String, dynamic>.from(metadata as Map<dynamic, dynamic>);
+          } else if (metadata != null) {
+            print('⚠️ Unexpected metadata type: ${metadata.runtimeType} - $metadata');
+            mapItem['metadata'] = <String, dynamic>{};
+          } else {
+            mapItem['metadata'] = <String, dynamic>{};
+          }
+          typed.add(Map<String, dynamic>.from(mapItem));
+        } catch (itemError, stackTrace) {
+          print('❌ Error processing client activity item: $itemError');
+          print('   Item data: $item');
+          print('   Stack trace: $stackTrace');
+        }
+      }
+      
       return typed;
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('Error fetching client activities: $e');
+      print('Stack trace: $stackTrace');
+      return [];
+    }
+  }
+  
+  // Get WhatsApp messages sent to clients
+  static Future<List<Map<String, dynamic>>> getWhatsAppMessages(
+    String clientId, {
+    Duration? timeFilter,
+    int? limit,
+  }) async {
+    try {
+      var queryBuilder = client
+          .from('whatsapp_messages')
+          .select('*')
+          .eq('sent_by_machine_id', clientId);
+      
+      // Apply time filter if provided
+      if (timeFilter != null) {
+        final cutoffTime = DateTime.now().subtract(timeFilter).toIso8601String();
+        queryBuilder = queryBuilder.gte('sent_at', cutoffTime);
+      }
+      
+      // Chain order and limit
+      final response = await queryBuilder
+          .order('sent_at', ascending: false)
+          .limit(limit ?? 50);
+      
+      // Ensure strong typing of map entries
+      final List<Map<String, dynamic>> typed = [];
+      for (var item in response as List) {
+        try {
+          final mapItem = item as Map<dynamic, dynamic>;
+          typed.add(Map<String, dynamic>.from(mapItem));
+        } catch (itemError, stackTrace) {
+          print('❌ Error processing WhatsApp message item: $itemError');
+          print('   Item data: $item');
+          print('   Stack trace: $stackTrace');
+        }
+      }
+      
+      print('📱 Found ${typed.length} WhatsApp messages for client $clientId');
+      if (typed.isNotEmpty) {
+        print('   Sample message: ${typed.first}');
+      }
+      
+      return typed;
+    } catch (e, stackTrace) {
+      print('Error fetching WhatsApp messages: $e');
+      print('Stack trace: $stackTrace');
       return [];
     }
   }
 
-  // Get unified activities from both remote_commands and client_activity
+  // Get unified activities from remote_commands, client_activity, and whatsapp_messages
   static Future<List<Map<String, dynamic>>> getRecentActivities(
     String clientId, {
-    Duration timeFilter = const Duration(hours: 24),
+    Duration timeFilter = const Duration(days: 7),
     int limit = 50,
   }) async {
     try {
-      // Fetch from both tables in parallel
+      print('📊 Fetching unified activities for client: $clientId');
+      
+      // Fetch from all tables in parallel
+      print('📊 Fetching remote commands...');
       final remoteCommands = await getRemoteCommands(
         clientId,
         timeFilter: timeFilter,
         limit: limit,
       );
+      print('✅ Got ${remoteCommands.length} remote commands');
       
+      print('📊 Fetching client activities...');
       final clientActivities = await getClientActivities(
         clientId,
         timeFilter: timeFilter,
         limit: limit,
       );
+      print('✅ Got ${clientActivities.length} client activities');
       
-      // Combine and transform both lists into a unified format
+      print('📊 Fetching WhatsApp messages...');
+      final whatsappMessages = await getWhatsAppMessages(
+        clientId,
+        timeFilter: timeFilter,
+        limit: limit,
+      );
+      print('✅ Got ${whatsappMessages.length} WhatsApp messages');
+      
+      print('📊 Unified activities for client $clientId:');
+      print('   Remote commands: ${remoteCommands.length}');
+      print('   Client activities: ${clientActivities.length}');
+      print('   WhatsApp messages: ${whatsappMessages.length}');
+      
+      // Combine and transform all lists into a unified format
       final List<Map<String, dynamic>> unifiedActivities = [];
       
       // Add remote commands (commands sent from mobile to desktop)
-      for (final cmd in remoteCommands) {
-        unifiedActivities.add({
-          'type': 'remote_command', // Command sent from mobile
-          'id': cmd['id'],
-          'client_id': cmd['client_id'],
-          'action': cmd['command'],
-          'command': cmd['command'],
-          'status': cmd['status'] ?? 'pending',
-          'parameters': cmd['parameters'] ?? {},
-          'metadata': {
-            'started_at': cmd['started_at'],
-            'completed_at': cmd['completed_at'],
-            'error_message': cmd['error_message'],
-            'result_summary': cmd['result_summary'],
-          },
-          'created_at': cmd['created_at'],
-          'username': null, // Remote commands don't have username
-        });
+      print('📊 Processing remote commands...');
+      for (int i = 0; i < remoteCommands.length; i++) {
+        try {
+          final cmd = remoteCommands[i];
+          print('   Processing remote command $i: ${cmd['command']}');
+          unifiedActivities.add({
+            'type': 'remote_command', // Command sent from mobile
+            'id': cmd['id'],
+            'client_id': cmd['client_id'],
+            'action': cmd['command'],
+            'command': cmd['command'],
+            'status': cmd['status'] ?? 'pending',
+            'parameters': cmd['parameters'] ?? {},
+            'metadata': {
+              'started_at': cmd['started_at'],
+              'completed_at': cmd['completed_at'],
+              'error_message': cmd['error_message'],
+              'result_summary': cmd['result_summary'],
+            },
+            'created_at': cmd['created_at'],
+            'username': null, // Remote commands don't have username
+          });
+        } catch (e, stackTrace) {
+          print('❌ Error processing remote command at index $i: $e');
+          print('   Stack trace: $stackTrace');
+        }
       }
       
       // Add client activities (user actions on desktop)
-      for (final activity in clientActivities) {
-        unifiedActivities.add({
-          'type': 'client_activity', // User action on desktop
-          'id': activity['id'],
-          'client_id': activity['client_id'],
-          'action': activity['action'],
-          'command': activity['action'], // For compatibility
-          'status': 'completed', // Client activities are always completed
-          'parameters': {},
-          'metadata': activity['metadata'] ?? {},
-          'created_at': activity['created_at'],
-          'username': activity['username'],
-        });
+      print('📊 Processing client activities...');
+      for (int i = 0; i < clientActivities.length; i++) {
+        try {
+          final activity = clientActivities[i];
+          print('   Processing client activity $i: ${activity['action']}');
+          unifiedActivities.add({
+            'type': 'client_activity', // User action on desktop
+            'id': activity['id'],
+            'client_id': activity['client_id'],
+            'action': activity['action'],
+            'command': activity['action'], // For compatibility
+            'status': 'completed', // Client activities are always completed
+            'parameters': {},
+            'metadata': activity['metadata'] ?? {},
+            'created_at': activity['created_at'],
+            'username': activity['username'],
+          });
+        } catch (e, stackTrace) {
+          print('❌ Error processing client activity at index $i: $e');
+          print('   Stack trace: $stackTrace');
+        }
       }
+      
+      // Add WhatsApp messages (invoices sent to clients)
+      print('📊 Processing WhatsApp messages...');
+      for (int i = 0; i < whatsappMessages.length; i++) {
+        try {
+          final message = whatsappMessages[i];
+          print('   Processing WhatsApp message $i: ${message['message_type']}');
+          unifiedActivities.add({
+            'type': 'whatsapp_message', // WhatsApp message sent
+            'id': message['id'],
+            'client_id': message['sent_by_machine_id'],
+            'action': 'send_invoice',
+            'command': 'send_invoice',
+            'status': message['status'] ?? 'sent',
+            'parameters': {},
+            'metadata': {
+              'client_phone': message['client_phone'],
+              'message_type': message['message_type'],
+              'message_content': message['message_content'],
+              'sent_by_user_name': message['sent_by_user_name'],
+            },
+            'created_at': message['sent_at'],
+            'username': message['sent_by_user_name'],
+          });
+        } catch (e, stackTrace) {
+          print('❌ Error processing WhatsApp message at index $i: $e');
+          print('   Stack trace: $stackTrace');
+        }
+      }
+      
+      print('📊 Sorting ${unifiedActivities.length} unified activities...');
       
       // Sort by created_at descending (most recent first)
       unifiedActivities.sort((a, b) {
@@ -495,15 +650,19 @@ class SupabaseService {
         if (bTime.isEmpty) return -1;
         try {
           return DateTime.parse(bTime).compareTo(DateTime.parse(aTime));
-        } catch (_) {
+        } catch (e) {
+          print('❌ Error sorting activities by date: $e');
           return 0;
         }
       });
       
       // Limit to requested number
-      return unifiedActivities.take(limit).toList();
-    } catch (e) {
+      final result = unifiedActivities.take(limit).toList();
+      print('   Total unified activities: ${result.length}');
+      return result;
+    } catch (e, stackTrace) {
       print('Error fetching unified activities: $e');
+      print('Stack trace: $stackTrace');
       return [];
     }
   }

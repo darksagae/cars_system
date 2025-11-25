@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'pairing_service.dart';
 
 /// WhatsApp Message Tracking Service
 /// 
@@ -12,23 +13,15 @@ class WhatsAppMessageTrackingService {
   WhatsAppMessageTrackingService._internal();
 
   // Keys for SharedPreferences
-  static const String _machineIdKey = 'whatsapp_machine_id';
   static const String _userIdKey = 'whatsapp_user_id';
   static const String _userNameKey = 'whatsapp_user_name';
   static const String _userPhoneKey = 'whatsapp_user_phone';
 
-  // Get machine ID (unique per machine)
+  // Get machine ID (use the same ID as the pairing service for consistency)
   Future<String> getMachineId() async {
-    final prefs = await SharedPreferences.getInstance();
-    String? machineId = prefs.getString(_machineIdKey);
-    
-    if (machineId == null) {
-      // Generate unique machine ID
-      machineId = 'machine_${DateTime.now().millisecondsSinceEpoch}_${_generateRandomString(8)}';
-      await prefs.setString(_machineIdKey, machineId);
-    }
-    
-    return machineId;
+    // Use the same client ID as the pairing service to ensure consistency
+    final pairingService = PairingService();
+    return await pairingService.getOrCreateDeviceId();
   }
 
   // Get user profile
@@ -229,16 +222,4 @@ class WhatsAppMessageTrackingService {
       return 0;
     }
   }
-
-  // Generate random string for machine ID
-  String _generateRandomString(int length) {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    final random = DateTime.now().millisecondsSinceEpoch;
-    final buffer = StringBuffer();
-    for (int i = 0; i < length; i++) {
-      buffer.write(chars[(random + i) % chars.length]);
-    }
-    return buffer.toString();
-  }
 }
-
