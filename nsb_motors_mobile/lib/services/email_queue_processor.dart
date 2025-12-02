@@ -6,6 +6,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'supabase_service.dart';
+import 'notification_service.dart';
+import 'notification_preferences_service.dart';
 
 /// Email Queue Processor
 /// 
@@ -18,8 +20,10 @@ class EmailQueueProcessor {
 
   Timer? _pollTimer;
   bool _isRunning = false;
+  RealtimeChannel? _realtimeChannel;
+  final NotificationPreferencesService _prefsService = NotificationPreferencesService();
 
-  /// Start processing email queue
+  /// Start processing email queue with realtime notifications
   void start({Duration pollInterval = const Duration(seconds: 10)}) {
     if (_isRunning) {
       print('⚠️ Email queue processor already running');
@@ -32,10 +36,68 @@ class EmailQueueProcessor {
     // Process immediately
     _processQueue();
 
-    // Then poll periodically
+    // Then poll periodically (fallback if realtime fails)
     _pollTimer = Timer.periodic(pollInterval, (_) {
       _processQueue();
     });
+
+    // Subscribe to realtime changes for instant notifications
+    _subscribeToRealtime();
+  }
+
+  /// Subscribe to Supabase Realtime for instant notifications
+  void _subscribeToRealtime() {
+    try {
+      final supabase = SupabaseService.client;
+      
+      // Subscribe to all inserts on the email queue table and filter in callback
+      _realtimeChannel = supabase
+          .channel('email_queue_changes')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'email_queue',
+            callback: (payload) async {
+              try {
+                final data = payload.newRecord ?? {};
+                if ((data['status'] as String?) == 'pending') {
+                  print('🔔 New email detected via Realtime!');
+                  
+                  // Check if push notifications are enabled before showing
+                  if (_prefsService.shouldShowNotification()) {
+                    final subject = data['subject'] as String? ?? 'New email';
+                    final toEmail = data['to_email'] as String? ?? 'recipient';
+                    await NotificationService().show(
+                      'Email queued',
+                      'Subject: $subject\nTo: $toEmail',
+                    );
+                  } else {
+                    print('📵 Push notifications disabled - skipping notification');
+                  }
+                  
+                  // Check if email alerts are enabled for additional notification
+                  if (_prefsService.shouldShowEmailAlert()) {
+                    final subject = data['subject'] as String? ?? 'New email';
+                    await NotificationService().show(
+                      '📧 Email Alert',
+                      'New email ready to send: $subject',
+                    );
+                  }
+                  
+                  _processQueue();
+                }
+              } catch (e) {
+                print('⚠️ Realtime callback error: $e');
+              }
+            },
+          )
+          .subscribe();
+
+      print('✅ Email Realtime subscription active - instant notifications enabled');
+    } catch (e) {
+      print('⚠️ Error setting up email realtime subscription: $e');
+      // Continue with polling if realtime fails
+    }
   }
 
   /// Stop processing email queue
@@ -43,6 +105,11 @@ class EmailQueueProcessor {
     _isRunning = false;
     _pollTimer?.cancel();
     _pollTimer = null;
+    
+    // Unsubscribe from realtime
+    _realtimeChannel?.unsubscribe();
+    _realtimeChannel = null;
+    
     print('🛑 Email queue processor stopped');
   }
 
@@ -76,6 +143,9 @@ class EmailQueueProcessor {
       final pdfUrl = email['pdf_url'] as String?;
 
       print('📧 Processing email to $toEmail...');
+      
+      // Note: Notifications are shown via realtime subscription
+      // This polling method is just a fallback for processing
 
       // Mark as processing
       await supabase

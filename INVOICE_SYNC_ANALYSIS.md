@@ -112,3 +112,6 @@ The mobile app only saves invoices when they're **sent via WhatsApp**, not when 
 4. ✅ Update `client_activity_service.dart` - Upload PDF to Supabase when invoice created
 5. ✅ Add background sync on app startup
 
+
+
+

@@ -9,10 +9,68 @@ import 'dart:convert';
 import 'dart:io';
 import '../services/supabase_service.dart';
 import '../providers/app_provider.dart';
+import '../services/notification_preferences_service.dart';
 import 'whatsapp_server_screen.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  final NotificationPreferencesService _prefsService = NotificationPreferencesService();
+  bool _pushNotificationsEnabled = true;
+  bool _emailAlertsEnabled = false;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreferences();
+  }
+
+  Future<void> _loadPreferences() async {
+    await _prefsService.initialize();
+    setState(() {
+      _pushNotificationsEnabled = _prefsService.pushNotificationsEnabled;
+      _emailAlertsEnabled = _prefsService.emailAlertsEnabled;
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _onPushNotificationsChanged(bool value) async {
+    setState(() {
+      _pushNotificationsEnabled = value;
+    });
+    await _prefsService.setPushNotificationsEnabled(value);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Push notifications ${value ? "enabled" : "disabled"}'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _onEmailAlertsChanged(bool value) async {
+    setState(() {
+      _emailAlertsEnabled = value;
+    });
+    await _prefsService.setEmailAlertsEnabled(value);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Email alerts ${value ? "enabled" : "disabled"}'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -102,14 +160,14 @@ class SettingsScreen extends StatelessWidget {
                 _buildSwitchItem(
                   'Push Notifications',
                   'Receive notifications for client updates',
-                  true,
-                  (value) {},
+                  _pushNotificationsEnabled,
+                  _onPushNotificationsChanged,
                 ),
                 _buildSwitchItem(
                   'Email Alerts',
                   'Get email alerts for system events',
-                  false,
-                  (value) {},
+                  _emailAlertsEnabled,
+                  _onEmailAlertsChanged,
                 ),
               ],
             ),

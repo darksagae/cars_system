@@ -45,6 +45,12 @@ class _DynamicPdfSearchState extends State<DynamicPdfSearch> {
   List<String> _availableEngineSizes = [];
 
   Timer? _pdfCheckTimer;
+  Timer? _searchDebounceTimer;
+  
+  // Text caching
+  String? _cachedPdfText;
+  String? _cachedPdfPath;
+  DateTime? _cachedPdfModificationTime;
 
   @override
   void initState() {
@@ -59,6 +65,7 @@ class _DynamicPdfSearchState extends State<DynamicPdfSearch> {
   @override
   void dispose() {
     _pdfCheckTimer?.cancel();
+    _searchDebounceTimer?.cancel();
     super.dispose();
   }
 
@@ -516,8 +523,15 @@ class _DynamicPdfSearchState extends State<DynamicPdfSearch> {
           setState(() {
             _searchQuery = value;
           });
+          
+          // Cancel previous debounce timer
+          _searchDebounceTimer?.cancel();
+          
           if (value.length >= 2) {
-            _performSearch();
+            // Debounce search - wait 400ms after user stops typing
+            _searchDebounceTimer = Timer(const Duration(milliseconds: 400), () {
+              _performSearch();
+            });
           } else {
             setState(() {
               _allResults = [];
@@ -1037,6 +1051,11 @@ class _DynamicPdfSearchState extends State<DynamicPdfSearch> {
         _searchQuery = '';
         _activeFilters = [];
         _isPdfLocked = false; // Don't auto-lock the latest PDF
+        
+        // Clear cache when new PDF is loaded
+        _cachedPdfText = null;
+        _cachedPdfPath = null;
+        _cachedPdfModificationTime = null;
       });
       
       await _savePersistedState();
@@ -1178,6 +1197,11 @@ class _DynamicPdfSearchState extends State<DynamicPdfSearch> {
           _searchQuery = '';
           _activeFilters = [];
           _isPdfLocked = false; // Reset lock when new PDF is loaded
+          
+          // Clear cache when new PDF is loaded
+          _cachedPdfText = null;
+          _cachedPdfPath = null;
+          _cachedPdfModificationTime = null;
         });
         
         // Save the new PDF path and reset lock state
@@ -1213,11 +1237,7 @@ class _DynamicPdfSearchState extends State<DynamicPdfSearch> {
     });
 
     try {
-      // Read PDF file
-      final file = File(_selectedPdfPath!);
-      final pdfBytes = await file.readAsBytes();
-      
-      // Extract text from PDF
+      // Check if pdftotext is available
       final pdftotextOk = await _isPdftotextAvailable();
       if (!pdftotextOk) {
         setState(() {
@@ -1234,7 +1254,28 @@ class _DynamicPdfSearchState extends State<DynamicPdfSearch> {
         return;
       }
 
-      final textContent = await _extractTextFromPdf(pdfBytes);
+      // Get cached text or extract new
+      final file = File(_selectedPdfPath!);
+      final currentModTime = await file.lastModified();
+      
+      String textContent;
+      if (_cachedPdfText != null && 
+          _cachedPdfPath == _selectedPdfPath && 
+          _cachedPdfModificationTime == currentModTime) {
+        // Use cached text
+        textContent = _cachedPdfText!;
+        print('✅ Using cached PDF text');
+      } else {
+        // Extract text from PDF
+        final pdfBytes = await file.readAsBytes();
+        textContent = await _extractTextFromPdf(pdfBytes);
+        
+        // Cache the extracted text
+        _cachedPdfText = textContent;
+        _cachedPdfPath = _selectedPdfPath;
+        _cachedPdfModificationTime = currentModTime;
+        print('✅ Cached PDF text for future searches');
+      }
       
       // Search for matching lines
       final results = _searchInText(textContent, _searchQuery);
@@ -1251,12 +1292,27 @@ class _DynamicPdfSearchState extends State<DynamicPdfSearch> {
       // Extract filter options from results
       _extractFilterOptions();
     } catch (e) {
+      print('❌ Search error: $e');
       setState(() {
         _isSearching = false;
-        _statusMessage = 'Search error: $e';
+        // Provide more specific error messages
+        if (e.toString().contains('pdftotext')) {
+          _statusMessage = 'PDF text extraction failed. Please ensure the PDF is not corrupted.';
+        } else if (e.toString().contains('Permission')) {
+          _statusMessage = 'Permission denied. Please check file permissions.';
+        } else if (e.toString().contains('No such file')) {
+          _statusMessage = 'PDF file not found. Please select a valid PDF.';
+        } else {
+          _statusMessage = 'Search error: ${e.toString().length > 50 ? e.toString().substring(0, 50) + "..." : e.toString()}';
+        }
         _allResults = [];
         _filteredResults = [];
       });
+      
+      // Clear cache on error to force re-extraction
+      _cachedPdfText = null;
+      _cachedPdfPath = null;
+      _cachedPdfModificationTime = null;
     }
   }
 
@@ -1406,16 +1462,51 @@ class _DynamicPdfSearchState extends State<DynamicPdfSearch> {
   List<Map<String, dynamic>> _searchInText(String text, String query) {
     final lines = text.split('\n');
     final results = <Map<String, dynamic>>[];
-    final queryLower = query.toLowerCase();
+    final queryLower = query.toLowerCase().trim();
+    
+    // Split query into words for better matching
+    final queryWords = queryLower.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
     
     for (int i = 0; i < lines.length; i++) {
       final line = lines[i].trim();
       if (line.isEmpty) continue;
       
-      if (line.toLowerCase().contains(queryLower) && _isVehicleDataLine(line)) {
+      final lineLower = line.toLowerCase();
+      
+      // Improved matching: check if all query words appear in the line
+      bool matches = false;
+      if (queryWords.length == 1) {
+        // Single word: use word boundary or contains for partial matches
+        final word = queryWords[0];
+        matches = RegExp(r'\b' + RegExp.escape(word) + r'\w*', caseSensitive: false).hasMatch(lineLower) ||
+                  lineLower.contains(word);
+      } else {
+        // Multiple words: all must appear (flexible order)
+        matches = queryWords.every((word) => 
+          RegExp(r'\b' + RegExp.escape(word) + r'\w*', caseSensitive: false).hasMatch(lineLower) ||
+          lineLower.contains(word)
+        );
+      }
+      
+      if (matches) {
+        // Try to parse as vehicle data line
         final vehicleData = _parseVehicleLine(line, i + 1);
         if (vehicleData != null) {
           results.add(vehicleData);
+        } else {
+          // Even if parsing fails, if it looks like vehicle data, include it with partial info
+          if (_isVehicleDataLine(line)) {
+            results.add({
+              'description': line,
+              'line_number': i + 1,
+              'serial_number': _extractSerialNumber(line),
+              'cif_value': _extractCifValue(line),
+              'year': _extractYear(line),
+              'engine_size': _extractEngineSize(line),
+              'hsc_code': 'N/A',
+              'country_origin': 'N/A',
+            });
+          }
         }
       }
     }
@@ -1424,52 +1515,145 @@ class _DynamicPdfSearchState extends State<DynamicPdfSearch> {
   }
 
   bool _isVehicleDataLine(String line) {
+    // More flexible patterns to detect vehicle data lines
     return RegExp(r'^\s*\d+\s+[\d.]+\s+[A-Z]{2}\s+').hasMatch(line) ||
-           line.contains('cc') ||
-           line.contains('CIF') ||
-           RegExp(r'\$\d+').hasMatch(line);
+           RegExp(r'\d+\s+[\d.]+\s+[A-Z]{2}').hasMatch(line) ||
+           (line.contains('cc') && RegExp(r'\d+').hasMatch(line)) ||
+           (line.contains('CIF') && RegExp(r'[\d,]+').hasMatch(line)) ||
+           RegExp(r'\$\s*[\d,]+').hasMatch(line) ||
+           RegExp(r'\b\d{4}\b').hasMatch(line) && // Contains a year
+           (line.contains('Toyota') || line.contains('Honda') || line.contains('Nissan') || 
+            line.contains('BMW') || line.contains('Mercedes') || line.contains('Audi') ||
+            line.contains('Ford') || line.contains('Jeep') || line.contains('Chevrolet') ||
+            line.contains('Hyundai') || line.contains('Kia') || line.contains('Mazda') ||
+            line.contains('Subaru') || line.contains('Mitsubishi') || line.contains('Suzuki'));
   }
 
   Map<String, dynamic>? _parseVehicleLine(String line, int lineNumber) {
     try {
-      final regex = RegExp(r'^\s*(\d+)\s+([\d.]+)\s+([A-Z]{2})\s+(.+?)\s+(\d+(?:\.\d+)?\s*(?:cc|Ton|bhp|Hp|Axle))\s+([\d,]+\.?\d*)\s*$');
-      final match = regex.firstMatch(line.trim());
+      // Primary regex pattern (strict format)
+      var regex = RegExp(r'^\s*(\d+)\s+([\d.]+)\s+([A-Z]{2})\s+(.+?)\s+(\d+(?:\.\d+)?\s*(?:cc|Ton|bhp|Hp|Axle))\s+([\d,]+\.?\d*)\s*$');
+      var match = regex.firstMatch(line.trim());
       
       if (match != null) {
-        final serialNumber = match.group(1)?.trim();
-        final hscCode = match.group(2)?.trim();
-        final countryOrigin = match.group(3)?.trim();
-        final description = match.group(4)?.trim();
-        final engineSize = match.group(5)?.trim();
-        final cifValue = match.group(6)?.trim();
-        
-        final yearRegex = RegExp(r'\b(19[9]\d|20[0-2]\d)\b');
-        final yearMatch = yearRegex.firstMatch(description ?? '');
-        final year = yearMatch?.group(1);
-        
+        return _buildVehicleDataFromMatch(match, line, lineNumber);
+      }
+      
+      // Fallback pattern 1: More flexible spacing
+      regex = RegExp(r'^\s*(\d+)\s+([\d.]+)\s+([A-Z]{2})\s+(.+?)\s+(\d+(?:\.\d+)?\s*(?:cc|Ton|bhp|Hp|Axle)?)\s+([\d,]+\.?\d*)\s*');
+      match = regex.firstMatch(line.trim());
+      if (match != null) {
+        return _buildVehicleDataFromMatch(match, line, lineNumber);
+      }
+      
+      // Fallback pattern 2: Extract components individually
+      final serialNumber = _extractSerialNumber(line);
+      final hscCode = _extractHscCode(line);
+      final countryOrigin = _extractCountryOrigin(line);
+      final description = _extractDescription(line);
+      final engineSize = _extractEngineSize(line);
+      final cifValue = _extractCifValue(line);
+      final year = _extractYear(line);
+      
+      // If we found at least serial number and description, it's valid
+      if (serialNumber != 'N/A' && description.isNotEmpty) {
         return {
           'serial_number': serialNumber,
           'hsc_code': hscCode,
           'country_origin': countryOrigin,
           'description': description,
           'engine_size': engineSize,
-          'cif_value': cifValue?.replaceAll(',', ''),
+          'cif_value': cifValue,
           'year': year,
           'line_number': lineNumber,
         };
       }
     } catch (e) {
+      print('⚠️ Error parsing line $lineNumber: $e');
+      // Return partial data instead of null
       return {
         'description': line,
         'line_number': lineNumber,
-        'serial_number': 'N/A',
-        'cif_value': 'N/A',
-        'year': 'N/A',
-        'engine_size': 'N/A',
+        'serial_number': _extractSerialNumber(line),
+        'cif_value': _extractCifValue(line),
+        'year': _extractYear(line),
+        'engine_size': _extractEngineSize(line),
+        'hsc_code': 'N/A',
+        'country_origin': 'N/A',
       };
     }
     
     return null;
+  }
+  
+  Map<String, dynamic> _buildVehicleDataFromMatch(RegExpMatch match, String line, int lineNumber) {
+    final serialNumber = match.group(1)?.trim() ?? 'N/A';
+    final hscCode = match.group(2)?.trim() ?? 'N/A';
+    final countryOrigin = match.group(3)?.trim() ?? 'N/A';
+    final description = match.group(4)?.trim() ?? line;
+    final engineSize = match.group(5)?.trim() ?? _extractEngineSize(line);
+    final cifValue = (match.group(6)?.trim() ?? _extractCifValue(line)).replaceAll(',', '');
+    final year = _extractYear(description);
+    
+    return {
+      'serial_number': serialNumber,
+      'hsc_code': hscCode,
+      'country_origin': countryOrigin,
+      'description': description,
+      'engine_size': engineSize,
+      'cif_value': cifValue,
+      'year': year,
+      'line_number': lineNumber,
+    };
+  }
+  
+  String _extractSerialNumber(String line) {
+    final match = RegExp(r'^\s*(\d+)').firstMatch(line.trim());
+    return match?.group(1) ?? 'N/A';
+  }
+  
+  String _extractHscCode(String line) {
+    final match = RegExp(r'\s+(\d+\.\d+)\s+').firstMatch(line);
+    return match?.group(1) ?? 'N/A';
+  }
+  
+  String _extractCountryOrigin(String line) {
+    final match = RegExp(r'\s+([A-Z]{2})\s+').firstMatch(line);
+    return match?.group(1) ?? 'N/A';
+  }
+  
+  String _extractDescription(String line) {
+    // Extract text between country code and engine size
+    final match = RegExp(r'[A-Z]{2}\s+(.+?)\s+\d+(?:\.\d+)?\s*(?:cc|Ton|bhp|Hp|Axle)').firstMatch(line);
+    if (match != null) return match.group(1)?.trim() ?? '';
+    
+    // Fallback: extract text after first few numbers
+    final fallback = RegExp(r'^\s*\d+\s+[\d.]+\s+[A-Z]{2}\s+(.+?)(?:\s+\d+(?:\.\d+)?\s*(?:cc|Ton|bhp|Hp|Axle)|\s+[\d,]+)').firstMatch(line);
+    if (fallback != null) return fallback.group(1)?.trim() ?? '';
+    
+    // Last resort: return line without leading numbers
+    return line.replaceAll(RegExp(r'^\s*\d+\s+[\d.]+\s+[A-Z]{2}\s+'), '').trim();
+  }
+  
+  String _extractEngineSize(String line) {
+    final match = RegExp(r'(\d+(?:\.\d+)?\s*(?:cc|Ton|bhp|Hp|Axle))').firstMatch(line);
+    return match?.group(1)?.trim() ?? 'N/A';
+  }
+  
+  String _extractCifValue(String line) {
+    // Try to find CIF value (usually at the end, may have $ or comma)
+    final match = RegExp(r'[\$]?\s*([\d,]+\.?\d*)\s*$').firstMatch(line.trim());
+    if (match != null) return match.group(1)?.replaceAll(',', '') ?? 'N/A';
+    
+    // Alternative: find large number at the end
+    final altMatch = RegExp(r'([\d,]{4,}(?:\.\d+)?)\s*$').firstMatch(line.trim());
+    return altMatch?.group(1)?.replaceAll(',', '') ?? 'N/A';
+  }
+  
+  String? _extractYear(String text) {
+    final yearRegex = RegExp(r'\b(19[89]\d|20[0-2]\d)\b');
+    final yearMatch = yearRegex.firstMatch(text);
+    return yearMatch?.group(1);
   }
 
   void _selectVehicle(Map<String, dynamic> vehicleData) {

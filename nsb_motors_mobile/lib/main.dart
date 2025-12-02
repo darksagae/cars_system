@@ -8,6 +8,7 @@ import 'services/whatsapp_queue_processor.dart';
 import 'services/email_queue_processor.dart';
 import 'services/background_service.dart';
 import 'services/notification_service.dart';
+import 'services/notification_preferences_service.dart';
 import 'services/invoice_sync_service.dart';
 import 'providers/app_provider.dart';
 import 'screens/home_screen.dart';
@@ -16,40 +17,64 @@ import 'screens/login_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Initialize Supabase
-  await SupabaseService.initialize();
+  try {
+    // Initialize Supabase
+    await SupabaseService.initialize();
 
-  // Notifications (Android 13+ requires runtime permission)
-  await NotificationService().initialize();
-  await NotificationService().requestPermissions();
-  // Emit a test notification so we can confirm OS delivery
-  await NotificationService().show('NSB Motors', 'Notifications enabled');
-  
-  // Debug: Check initial auth state
-  print('🔐 Initial auth check:');
-  print('   Has session: ${SupabaseService.currentSession != null}');
-  print('   Has user: ${SupabaseService.currentUser != null}');
-  print('   Is authenticated: ${SupabaseService.isAuthenticated}');
-  
-  // Note: Using Realtime subscriptions for instant notifications
-  // Works when app is open or in background (not force-closed)
+    // Initialize notification preferences
+    try {
+      await NotificationPreferencesService().initialize();
+    } catch (e) {
+      print('⚠️ Error initializing notification preferences: $e');
+      // Continue - preferences will use defaults
+    }
 
-  // Start queue processors if authenticated
-  if (SupabaseService.isAuthenticated) {
-    WhatsAppQueueProcessor().start();
-    EmailQueueProcessor().start();
-    BackgroundService().start(); // Keep app alive for instant WhatsApp opening
+    // Notifications (Android 13+ requires runtime permission)
+    try {
+      await NotificationService().initialize();
+      await NotificationService().requestPermissions();
+      // Emit a test notification so we can confirm OS delivery
+      await NotificationService().show('NSB Motors', 'Notifications enabled');
+    } catch (e) {
+      print('⚠️ Error initializing notifications: $e');
+      // Continue - notifications may not work but app should still run
+    }
     
-    // Sync invoices in background (non-blocking)
-    InvoiceSyncService().syncAllInvoices().then((count) {
-      if (count > 0) {
-        print('✅ Synced $count invoice(s) on startup');
+    // Debug: Check initial auth state
+    print('🔐 Initial auth check:');
+    print('   Has session: ${SupabaseService.currentSession != null}');
+    print('   Has user: ${SupabaseService.currentUser != null}');
+    print('   Is authenticated: ${SupabaseService.isAuthenticated}');
+    
+    // Note: Using Realtime subscriptions for instant notifications
+    // Works when app is open or in background (not force-closed)
+
+    // Start queue processors if authenticated
+    if (SupabaseService.isAuthenticated) {
+      try {
+        WhatsAppQueueProcessor().start();
+        EmailQueueProcessor().start();
+        BackgroundService().start(); // Keep app alive for instant WhatsApp opening
+        
+        // Sync invoices in background (non-blocking)
+        InvoiceSyncService().syncAllInvoices().then((count) {
+          if (count > 0) {
+            print('✅ Synced $count invoice(s) on startup');
+          }
+        }).catchError((e) {
+          print('⚠️ Error syncing invoices on startup: $e');
+        });
+        
+        print('✅ WhatsApp and Email queue processors started');
+      } catch (e) {
+        print('⚠️ Error starting queue processors: $e');
+        // Continue - app should still work
       }
-    }).catchError((e) {
-      print('⚠️ Error syncing invoices on startup: $e');
-    });
-    
-    print('✅ WhatsApp and Email queue processors started');
+    }
+  } catch (e, stackTrace) {
+    print('❌ Critical error during initialization: $e');
+    print('Stack trace: $stackTrace');
+    // Still run the app - let user see error screen if needed
   }
   
   runApp(const NSBMotorsMobileApp());

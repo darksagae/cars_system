@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'supabase_service.dart';
 import 'notification_service.dart';
+import 'notification_preferences_service.dart';
 import 'local_database_service.dart';
 
 /// WhatsApp Queue Processor
@@ -22,6 +23,7 @@ class WhatsAppQueueProcessor {
   bool _isProcessing = false;
   bool _isRunning = false;
   RealtimeChannel? _realtimeChannel;
+  final NotificationPreferencesService _prefsService = NotificationPreferencesService();
 
   bool get isRunning => _isRunning;
 
@@ -64,7 +66,14 @@ class WhatsAppQueueProcessor {
                 final data = payload.newRecord ?? {};
                 if ((data['status'] as String?) == 'pending') {
                   print('🔔 New WhatsApp message detected via Realtime!');
-                  await NotificationService().show('WhatsApp message queued', 'Tap to open and send');
+                  
+                  // Check if push notifications are enabled before showing
+                  if (_prefsService.shouldShowNotification()) {
+                    await NotificationService().show('WhatsApp message queued', 'Tap to open and send');
+                  } else {
+                    print('📵 Push notifications disabled - skipping notification');
+                  }
+                  
                   _processQueue();
                 }
               } catch (e) {
