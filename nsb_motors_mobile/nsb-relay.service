@@ -1,0 +1,14 @@
+[Unit]
+Description=NSB Portal Relay Server
+After=network.target
+
+[Service]
+Type=simple
+User=darksagae
+WorkingDirectory=/home/darksagae/Desktop/NSB/cars_system/portal_relay
+ExecStart=/usr/local/bin/node server.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -37,7 +37,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
           SnackBar(
             content: Text(
               '✅ WhatsApp server started successfully!',
-              style: GoogleFonts.poppins(),
+              style: GoogleFonts.plusJakartaSans(),
             ),
             backgroundColor: Colors.green,
           ),
@@ -47,7 +47,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
           SnackBar(
             content: Text(
               '❌ Failed to start server',
-              style: GoogleFonts.poppins(),
+              style: GoogleFonts.plusJakartaSans(),
             ),
             backgroundColor: Colors.red,
           ),
@@ -59,7 +59,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
           SnackBar(
             content: Text(
               'Error: $e',
-              style: GoogleFonts.poppins(),
+              style: GoogleFonts.plusJakartaSans(),
             ),
             backgroundColor: Colors.red,
           ),
@@ -86,7 +86,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
           SnackBar(
             content: Text(
               '✅ WhatsApp server stopped',
-              style: GoogleFonts.poppins(),
+              style: GoogleFonts.plusJakartaSans(),
             ),
             backgroundColor: Colors.orange,
           ),
@@ -98,7 +98,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
           SnackBar(
             content: Text(
               'Error: $e',
-              style: GoogleFonts.poppins(),
+              style: GoogleFonts.plusJakartaSans(),
             ),
             backgroundColor: Colors.red,
           ),
@@ -120,7 +120,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
         SnackBar(
           content: Text(
             'Server is not running',
-            style: GoogleFonts.poppins(),
+            style: GoogleFonts.plusJakartaSans(),
           ),
           backgroundColor: Colors.red,
         ),
@@ -141,7 +141,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
         SnackBar(
           content: Text(
             'Server is not running',
-            style: GoogleFonts.poppins(),
+            style: GoogleFonts.plusJakartaSans(),
           ),
           backgroundColor: Colors.red,
         ),
@@ -155,7 +155,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
       SnackBar(
         content: Text(
           'Server URL copied: $url',
-          style: GoogleFonts.poppins(),
+          style: GoogleFonts.plusJakartaSans(),
         ),
         backgroundColor: Colors.green,
       ),
@@ -173,7 +173,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
       appBar: AppBar(
         title: Text(
           'WhatsApp Server',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.green[700],
         foregroundColor: Colors.white,
@@ -201,7 +201,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
                         const SizedBox(width: 12),
                         Text(
                           isRunning ? 'Server Running' : 'Server Stopped',
-                          style: GoogleFonts.poppins(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
                             color: isRunning ? Colors.green : Colors.red,
@@ -244,7 +244,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
                           WhatsAppQueueProcessor().isRunning 
                               ? 'Queue Processor: Running' 
                               : 'Queue Processor: Stopped',
-                          style: GoogleFonts.poppins(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                             color: WhatsAppQueueProcessor().isRunning ? Colors.green : Colors.orange,
@@ -260,7 +260,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
                             '✅ Desktop machines send messages via Supabase.\n'
                             '✅ This app processes them automatically every 5 seconds.'
                           : '⚠️ Queue processor is stopped. Messages will not be processed automatically.',
-                      style: GoogleFonts.poppins(fontSize: 14),
+                      style: GoogleFonts.plusJakartaSans(fontSize: 14),
                     ),
                   ],
                 ),
@@ -280,7 +280,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
                   children: [
                     Text(
                       '📋 How It Works',
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
@@ -292,7 +292,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
                       '3. WhatsApp opens with the message (you click send)\n'
                       '4. Works from anywhere - no WiFi required!\n'
                       '5. Messages are tracked in Supabase',
-                      style: GoogleFonts.poppins(fontSize: 14),
+                      style: GoogleFonts.plusJakartaSans(fontSize: 14),
                     ),
                   ],
                 ),
@@ -308,7 +308,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
                 icon: const Icon(Icons.share),
                 label: Text(
                   'Share Server URL',
-                  style: GoogleFonts.poppins(fontSize: 16),
+                  style: GoogleFonts.plusJakartaSans(fontSize: 16),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blue,
@@ -322,7 +322,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
                 icon: const Icon(Icons.copy),
                 label: Text(
                   'Copy Server URL',
-                  style: GoogleFonts.poppins(fontSize: 16),
+                  style: GoogleFonts.plusJakartaSans(fontSize: 16),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.grey[700],
@@ -342,7 +342,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
                     : const Icon(Icons.stop),
                 label: Text(
                   'Stop Server',
-                  style: GoogleFonts.poppins(fontSize: 16),
+                  style: GoogleFonts.plusJakartaSans(fontSize: 16),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
@@ -362,7 +362,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
                     : const Icon(Icons.play_arrow),
                 label: Text(
                   'Start Server',
-                  style: GoogleFonts.poppins(fontSize: 16),
+                  style: GoogleFonts.plusJakartaSans(fontSize: 16),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green,
@@ -388,7 +388,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
                     Expanded(
                       child: Text(
                         'Note: When a message is queued, WhatsApp will open automatically and you need to manually click the send button. This is a limitation of WhatsApp\'s security model.',
-                        style: GoogleFonts.poppins(fontSize: 12),
+                        style: GoogleFonts.plusJakartaSans(fontSize: 12),
                       ),
                     ),
                   ],
@@ -409,7 +409,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
           width: 100,
           child: Text(
             '$label:',
-            style: GoogleFonts.poppins(
+            style: GoogleFonts.plusJakartaSans(
               fontWeight: FontWeight.bold,
               fontSize: 14,
             ),
@@ -418,7 +418,7 @@ class _WhatsAppServerScreenState extends State<WhatsAppServerScreen> {
         Expanded(
           child: Text(
             value,
-            style: GoogleFonts.poppins(fontSize: 14),
+            style: GoogleFonts.plusJakartaSans(fontSize: 14),
           ),
         ),
       ],

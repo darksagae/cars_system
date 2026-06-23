@@ -7,3 +7,20 @@ __pycache__/
 .dart_tool/
 build/
 
+## Installers, archives, and patches
+*.zip
+*.exe
+*.patch
+patches/
+
+## Build and deployment artifacts
+dist/
+deployment_package/
+installer_temp/
+**/kernel_blob.bin
+portal_relay/pocketbase
+poppler-release.zip
+vc_redist.x64.exe
+
+## Local secrets (keep credentials on disk, not in Git)
+**/config/*.secrets.dart

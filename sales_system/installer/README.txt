@@ -1,54 +1,46 @@
-NSB Motors Uganda - Vehicle Sales Management System
-==================================================
+NSB Motors Sales System
+=======================
 
-WELCOME TO NSB MOTORS UG
+Welcome to NSB Motors Sales System!
 
-Thank you for choosing NSB Motors Uganda's Vehicle Sales Management System. 
-This professional application will help you manage your vehicle sales business efficiently.
+This is a comprehensive vehicle sales management system designed for NSB Motors Uganda.
 
-SYSTEM REQUIREMENTS
--------------------
+SYSTEM REQUIREMENTS:
 - Windows 10 (version 1903 or later) or Windows 11
-- 4GB RAM minimum (8GB recommended)
-- 500MB free disk space
-- Internet connection for initial setup (optional)
+- 64-bit processor
+- 4 GB RAM minimum (8 GB recommended)
+- 500 MB free disk space
+- Internet connection (for WhatsApp service, optional)
 
-FEATURES
---------
-✓ Customer Management with Profile Images
-✓ Vehicle Inventory Management  
-✓ Professional Invoice Generation
-✓ Payment Tracking and Reminders
-✓ Document Storage and Management
-✓ Comprehensive Reporting
-✓ Offline Operation (No Internet Required)
-✓ Data Backup and Restore
-✓ Multi-user Support
+FEATURES:
+- Vehicle inventory management
+- Customer management
+- Invoice generation
+- Sales tracking
+- WhatsApp integration for customer communication
+- URA database lookup
+- PDF document processing
+- Tax calculation
+- And much more!
 
-SECURITY INFORMATION
---------------------
-This application is safe and does not contain malware. 
-Windows Defender may show a warning - this is normal for unsigned applications.
-
-To proceed safely:
-1. Click "More info" if Windows shows a warning
-2. Click "Run anyway" to continue installation
-3. The application is digitally verified and safe
-
-INSTALLATION
-------------
-1. Run the installer as Administrator
+INSTALLATION:
+1. Run the installer (NSB_Motors_Setup_v1.0.0.exe)
 2. Follow the installation wizard
-3. The application will be installed to Program Files
-4. A desktop shortcut will be created
-5. Launch from Desktop or Start Menu
+3. Choose installation location (default: C:\Program Files\NSB Motors Sales System)
+4. Select additional options (desktop icon, etc.)
+5. Complete the installation
 
-SUPPORT
--------
-For technical support, contact:
-Email: nsbbsolutions@gmail.com
-Phone: +256394836253
+FIRST TIME SETUP:
+When you first launch the application on a new device:
+1. You will see the "Setup New Device" screen
+2. Create your account with:
+   - Username
+   - Password
+   - Confirm Password
+3. The first user created will be an administrator
+4. After account creation, you can log in
 
-Business Hours: Monday-Friday, 9AM-5PM EAT
+SUPPORT:
+For support, please contact: nsbbsolutions@gmail.com
 
-Thank you for choosing NSB Motors Uganda!
+Thank you for using NSB Motors Sales System!

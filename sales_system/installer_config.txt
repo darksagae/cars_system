@@ -1,0 +1,5 @@
+;!@Install@!UTF-8!
+Title="NSB Motors Installer"
+BeginPrompt="This will install the NSB Motors application on your computer. Do you want to continue?"
+RunProgram="install.bat"
+;!@InstallEnd@!

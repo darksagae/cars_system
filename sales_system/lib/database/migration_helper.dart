@@ -11,8 +11,8 @@ class MigrationHelper {
     if (version < 2) {
       await _migrateToVersion2(db);
     }
-    
-    await db.setVersion(_currentVersion);
+    // Do NOT call db.setVersion here: it would overwrite SQLite user_version (e.g. to 2)
+    // during a higher-version upgrade (e.g. 9→10) and break DatabaseHelper._onUpgrade.
   }
 
   /// Migrate to version 2: Add serial_number column to ura_cif_database

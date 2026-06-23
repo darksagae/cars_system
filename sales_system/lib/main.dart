@@ -5,7 +5,6 @@ import 'widgets/desktop_frame.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'screens/glass_login_screen.dart';
 import 'screens/root_gate.dart';
 import 'providers/sales_provider.dart';
 import 'providers/customer_provider.dart';
@@ -20,9 +19,14 @@ import 'services/remote_command_executor.dart';
 import 'services/pairing_service.dart';
 import 'services/heartbeat_service.dart';
 import 'services/whatsapp_service_manager.dart';
+import 'services/session_timeout_service.dart';
+import 'services/machine_relay_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize machine relay service
+  await MachineRelayService().initialize();
   
   // Initialize database factory for Linux/Desktop
   sqfliteFfiInit();
@@ -93,6 +97,9 @@ class _SalesSystemAppState extends State<SalesSystemApp> with WidgetsBindingObse
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      SessionTimeoutService.instance.checkIdleOnResume();
+    }
     if (state == AppLifecycleState.detached || state == AppLifecycleState.paused) {
       // App is closing or being suspended
       WhatsAppServiceManager().cleanup();
@@ -103,7 +110,7 @@ class _SalesSystemAppState extends State<SalesSystemApp> with WidgetsBindingObse
   Widget build(BuildContext context) {
         return MultiProvider(
           providers: [
-            ChangeNotifierProvider(create: (_) => ThemeProvider()..setTheme('modern_glass')),
+            ChangeNotifierProvider(create: (_) => ThemeProvider()..loadFromPrefs()),
             ChangeNotifierProvider(create: (_) => SalesProvider()),
             ChangeNotifierProvider(create: (_) => CustomerProvider()),
             ChangeNotifierProvider(create: (_) => InvoiceProvider()),
@@ -113,6 +120,7 @@ class _SalesSystemAppState extends State<SalesSystemApp> with WidgetsBindingObse
             ChangeNotifierProvider(create: (_) => PaymentReminderProvider()),
           ],
       child: MaterialApp(
+        navigatorKey: SessionTimeoutService.navigatorKey,
         title: 'NSB Motors Ug',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
@@ -159,10 +167,12 @@ class _SalesSystemAppState extends State<SalesSystemApp> with WidgetsBindingObse
           ),
         ),
         builder: (context, child) {
-          // Wrap entire app in DesktopFrame to show custom title bar on Windows
+          // Pointer + keyboard bump idle timer; DesktopFrame for custom title bar on Windows
           return DesktopFrame(
             title: 'NSB Motors Ug',
-            child: child ?? const SizedBox.shrink(),
+            child: SessionActivityWrapper(
+              child: child ?? const SizedBox.shrink(),
+            ),
           );
         },
         home: const RootGate(),

@@ -321,7 +321,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Invoice #${invoice.invoiceNumber}',
+                        'Invoice NSBmotors_${invoice.invoiceNumber}',
                         style: GoogleFonts.poppins(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -330,7 +330,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        invoice.customer?.name ?? 'N/A',
+                        (invoice.customer?.name?.isNotEmpty == true) ? invoice.customer!.name : 'N/A',
                         style: GoogleFonts.poppins(
                           fontSize: 14,
                           color: isHover ? Colors.black87 : Colors.white.withOpacity(0.8),
@@ -369,24 +369,25 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        // Delete button
-                        GestureDetector(
-                          onTap: () => _confirmDeleteInvoice(context, invoice),
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: Colors.red.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.red.withOpacity(0.3)),
-                            ),
-                            child: FaIcon(
-                              FontAwesomeIcons.trash,
-                              size: 14,
-                              color: Colors.red,
+                        if (!invoice.isFinalized) ...[
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () => _confirmDeleteInvoice(context, invoice),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.red.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.red.withOpacity(0.3)),
+                              ),
+                              child: FaIcon(
+                                FontAwesomeIcons.trash,
+                                size: 14,
+                                color: Colors.red,
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -452,6 +453,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
   // Confirm and delete invoice
   Future<void> _confirmDeleteInvoice(BuildContext context, Invoice invoice) async {
+    if (invoice.isFinalized) return;
+
     // Stop event propagation to prevent navigation
     final confirm = await showDialog<bool>(
       context: context,
@@ -465,7 +468,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
           ),
         ),
         content: Text(
-          'Are you sure you want to delete invoice #${invoice.invoiceNumber}?\n\nThis action cannot be undone.',
+          'Are you sure you want to delete invoice NSBmotors_${invoice.invoiceNumber}?\n\nThis action cannot be undone.',
           style: GoogleFonts.poppins(
             color: Colors.white70,
           ),
@@ -525,7 +528,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  '✅ Invoice #${invoice.invoiceNumber} deleted successfully',
+                  '✅ Invoice NSBmotors_${invoice.invoiceNumber} deleted successfully',
                   style: GoogleFonts.poppins(),
                 ),
                 backgroundColor: Colors.green,

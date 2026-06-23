@@ -1204,8 +1204,10 @@ class _DynamicPdfSearchState extends State<DynamicPdfSearch> {
           _cachedPdfModificationTime = null;
         });
         
-        // Save the new PDF path and reset lock state
+        // Save the new PDF path and treat it as the latest so _checkForLatestPdf won't overwrite it
         await _savePersistedState();
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('last_ura_database_pdf_path', selectedPath);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('✅ PDF loaded: ${selectedPath.split('/').last} (${sizeMb.toStringAsFixed(1)} MB)'),
@@ -1242,13 +1244,17 @@ class _DynamicPdfSearchState extends State<DynamicPdfSearch> {
       if (!pdftotextOk) {
         setState(() {
           _isSearching = false;
-          _statusMessage = 'pdftotext not found. Please install poppler-utils (sudo apt install poppler-utils).';
+          _statusMessage = Platform.isWindows 
+            ? 'pdftotext.exe not found. Please ensure poppler is bundled with the application.'
+            : 'pdftotext not found. Please install poppler-utils (sudo apt install poppler-utils).';
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('⚠️ pdftotext not found. Install: sudo apt install poppler-utils'),
+          SnackBar(
+            content: Text(Platform.isWindows 
+              ? '⚠️ pdftotext.exe not found. Please reinstall the application.'
+              : '⚠️ pdftotext not found. Install: sudo apt install poppler-utils'),
             backgroundColor: Colors.orange,
-            duration: Duration(seconds: 4),
+            duration: const Duration(seconds: 4),
           ),
         );
         return;
@@ -1297,7 +1303,7 @@ class _DynamicPdfSearchState extends State<DynamicPdfSearch> {
         _isSearching = false;
         // Provide more specific error messages
         if (e.toString().contains('pdftotext')) {
-          _statusMessage = 'PDF text extraction failed. Please ensure the PDF is not corrupted.';
+          _statusMessage = 'PDF text extraction failed. The PDF may be corrupted, image-only, or incompatible. Try a different PDF.';
         } else if (e.toString().contains('Permission')) {
           _statusMessage = 'Permission denied. Please check file permissions.';
         } else if (e.toString().contains('No such file')) {
@@ -1316,9 +1322,63 @@ class _DynamicPdfSearchState extends State<DynamicPdfSearch> {
     }
   }
 
-  Future<bool> _isPdftotextAvailable() async {
+  /// Get the path to pdftotext executable
+  Future<String?> _getPdftotextPath() async {
+    if (Platform.isWindows) {
+      // On Windows, look for pdftotext.exe in common locations
+      final executable = Platform.resolvedExecutable;
+      final executableDir = path.dirname(executable);
+      
+      // Check common locations relative to executable
+      final possiblePaths = [
+        path.join(executableDir, 'pdftotext.exe'),
+        path.join(executableDir, 'poppler', 'pdftotext.exe'),
+        path.join(executableDir, 'poppler', 'poppler-25.12.0', 'Library', 'bin', 'pdftotext.exe'),
+        path.join(executableDir, 'bundled_deps', 'pdftotext.exe'),
+        path.join(executableDir, '..', 'poppler', 'pdftotext.exe'),
+        path.join(executableDir, '..', 'poppler', 'poppler-25.12.0', 'Library', 'bin', 'pdftotext.exe'),
+      ];
+      
+      for (final possiblePath in possiblePaths) {
+        final file = File(possiblePath);
+        if (await file.exists()) {
+          print('✅ Found pdftotext.exe at: $possiblePath');
+          return possiblePath;
+        }
+      }
+      
+      // Try system PATH as fallback
+      try {
+        final result = await Process.run('pdftotext.exe', ['-v'], runInShell: true);
+        if (result.exitCode == 0 || result.stderr.toString().contains('pdftotext')) {
+          return 'pdftotext.exe';
+        }
+      } catch (_) {
+        // Continue to return null
+      }
+      
+      print('❌ pdftotext.exe not found in any location');
+      return null;
+    } else {
+      // On Linux/Mac, use system pdftotext
     try {
       final result = await Process.run('pdftotext', ['-v']);
+        if (result.exitCode == 0 || result.stderr.toString().contains('pdftotext')) {
+          return 'pdftotext';
+        }
+      } catch (_) {
+        return null;
+      }
+      return null;
+    }
+  }
+
+  Future<bool> _isPdftotextAvailable() async {
+    final pdftotextPath = await _getPdftotextPath();
+    if (pdftotextPath == null) return false;
+    
+    try {
+      final result = await Process.run(pdftotextPath, ['-v'], runInShell: Platform.isWindows);
       return result.exitCode == 0 || result.stderr.toString().contains('pdftotext');
     } catch (_) {
       return false;
@@ -1431,32 +1491,68 @@ class _DynamicPdfSearchState extends State<DynamicPdfSearch> {
   }
 
   Future<String> _extractTextFromPdf(Uint8List pdfBytes) async {
-    try {
-      final tempDir = Directory.systemTemp;
-      final tempFile = File('${tempDir.path}/temp_pdf.pdf');
-      final outputFile = File('${tempDir.path}/temp_output.txt');
-      
-      await tempFile.writeAsBytes(pdfBytes);
-      
-      final result = await Process.run('pdftotext', [
-        '-layout',
-        tempFile.path,
-        outputFile.path,
-      ]);
-      
-      if (result.exitCode == 0 && await outputFile.exists()) {
-        final extractedText = await outputFile.readAsString();
-        
-        await tempFile.delete();
-        await outputFile.delete();
-        
-        return extractedText;
-      } else {
-        throw Exception('pdftotext failed');
+    const maxRetries = 3;
+    String? lastError;
+
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Get pdftotext path
+        final pdftotextPath = await _getPdftotextPath();
+        if (pdftotextPath == null) {
+          throw Exception('pdftotext not found. Please ensure poppler-utils is installed or bundled with the application.');
+        }
+
+        // Use unique temp files to avoid conflicts when multiple extractions run concurrently
+        final suffix = '${DateTime.now().millisecondsSinceEpoch}_${attempt}';
+        final tempDir = Directory.systemTemp;
+        final tempFile = File('${tempDir.path}/nsb_pdf_$suffix.pdf');
+        final outputFile = File('${tempDir.path}/nsb_pdf_out_$suffix.txt');
+
+        try {
+          await tempFile.writeAsBytes(pdfBytes);
+
+          // On Windows, set working directory for DLL loading; on Linux/Mac use null
+          final pdftotextDir = path.dirname(pdftotextPath);
+          final workingDir = Platform.isWindows && pdftotextDir.isNotEmpty && pdftotextDir != '.'
+              ? pdftotextDir
+              : null;
+
+          final result = await Process.run(
+            pdftotextPath,
+            ['-layout', tempFile.path, outputFile.path],
+            workingDirectory: workingDir,
+            runInShell: Platform.isWindows,
+          );
+
+          if (result.exitCode == 0 && await outputFile.exists()) {
+            final extractedText = await outputFile.readAsString();
+            print('✅ Successfully extracted text from PDF');
+            return extractedText;
+          } else {
+            lastError = result.stderr?.toString().trim() ?? 'Exit code ${result.exitCode}';
+            print('⚠️ pdftotext attempt $attempt failed: $lastError');
+            if (attempt < maxRetries) {
+              await Future.delayed(Duration(milliseconds: 200 * attempt));
+            }
+          }
+        } finally {
+          try {
+            if (await tempFile.exists()) await tempFile.delete();
+            if (await outputFile.exists()) await outputFile.delete();
+          } catch (_) {}
+        }
+      } catch (e) {
+        lastError = e.toString();
+        print('⚠️ PDF extraction attempt $attempt error: $e');
+        if (attempt < maxRetries) {
+          await Future.delayed(Duration(milliseconds: 200 * attempt));
+        } else {
+          rethrow;
+        }
       }
-    } catch (e) {
-      throw Exception('PDF text extraction failed: $e');
     }
+
+    throw Exception('pdftotext failed after $maxRetries attempts. ${lastError ?? "Unknown error"}');
   }
 
   List<Map<String, dynamic>> _searchInText(String text, String query) {

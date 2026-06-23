@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -11,80 +12,65 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  Timer? _refreshTimer;
+
+  static const _ink = Color(0xFF0F172A);
+  static const _secondary = Color(0xFF64748B);
+  static const _muted = Color(0xFF94A3B8);
+  static const _border = Color(0xFFE2E8F0);
+  static const _canvas = Color(0xFFF8FAFC);
+  static const _accent = Color(0xFF1D4ED8);
+
   @override
   void initState() {
     super.initState();
-    // Auto-refresh every 3 seconds for real-time updates
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _startAutoRefresh();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) context.read<AppProvider>().refreshDesktopClients();
     });
   }
 
-  void _startAutoRefresh() {
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) {
-        context.read<AppProvider>().refresh();
-        _startAutoRefresh(); // Schedule next refresh
-      }
-    });
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: LayoutBuilder(
-          builder: (context, constraints) {
-            return FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'NSB Motors Management',
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            );
-          },
-        ),
-        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
-        elevation: 0,
-        actions: [
-          IconButton(
-            onPressed: () {
-              context.read<AppProvider>().refresh();
-            },
-            icon: const Icon(Icons.refresh, color: Colors.white),
-          ),
-        ],
-      ),
+      backgroundColor: _canvas,
       body: Consumer<AppProvider>(
         builder: (context, appProvider, child) {
           if (appProvider.isLoading && appProvider.systemStats == null) {
-            return Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
-              ),
+            return const Center(
+              child: CircularProgressIndicator(strokeWidth: 2),
             );
           }
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildWelcomeCard(context),
-                const SizedBox(height: 20),
-                _buildStatsGrid(appProvider),
-                const SizedBox(height: 20),
-                _buildQuickActions(context, appProvider),
-                const SizedBox(height: 20),
-                _buildRecentActivity(appProvider),
+          return RefreshIndicator(
+            onRefresh: () => appProvider.refresh(),
+            color: _accent,
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                _buildSliverAppBar(appProvider),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      const SizedBox(height: 24),
+                      _buildBentoGrid(appProvider),
+                      const SizedBox(height: 28),
+                      _buildSectionHeader('Quick Actions'),
+                      const SizedBox(height: 12),
+                      _buildQuickActions(context),
+                      const SizedBox(height: 28),
+                      _buildSectionHeader('Recent Activity'),
+                      const SizedBox(height: 12),
+                      _buildRecentActivity(appProvider),
+                    ]),
+                  ),
+                ),
               ],
             ),
           );
@@ -93,214 +79,467 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildWelcomeCard(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.zero,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Theme.of(context).colorScheme.primary, Colors.purple.shade400],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: SizedBox(
-          height: 140,
-          width: double.infinity,
-          child: Image.asset(
-            'assets/logo/logo.png',
-            fit: BoxFit.cover,
-            alignment: const Alignment(0, -0.8),
-            width: double.infinity,
-            height: double.infinity,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatsGrid(AppProvider appProvider) {
+  Widget _buildSliverAppBar(AppProvider appProvider) {
     final stats = appProvider.systemStats ?? {};
-    
-    // Prepare last update display without year (e.g., "November 2025" -> "November")
-    String lastUpdateRaw = '${stats['last_database_update'] ?? 'Never'}';
-    String lastUpdateDisplay = lastUpdateRaw;
-    if (lastUpdateRaw.contains(' ')) {
-      lastUpdateDisplay = lastUpdateRaw.split(' ').first;
-    }
+    final activeClients = stats['active_clients'] ?? 0;
+    final exchangeRate = (stats['current_exchange_rate'] ?? 3700.0);
 
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: 2,
-      crossAxisSpacing: 16,
-      mainAxisSpacing: 16,
-      childAspectRatio: 1.5,
-      children: [
-        _buildStatCard(
-          'Active Clients',
-          '${stats['active_clients'] ?? 0}',
-          Icons.computer,
-          const Color(0xFF667EEA),
-        ),
-        _buildStatCard(
-          'Last Update',
-          lastUpdateDisplay,
-          Icons.update,
-          const Color(0xFF4CAF50),
-        ),
-        _buildStatCard(
-          'Exchange Rate',
-          'UGX ${(stats['current_exchange_rate'] ?? 3700.0).toStringAsFixed(0)}',
-          Icons.currency_exchange,
-          const Color(0xFFFF9800),
-        ),
-        _buildStatCard(
-          'Database Status',
-          'Online',
-          Icons.cloud_done,
-          const Color(0xFF2196F3),
+    return SliverAppBar(
+      expandedHeight: 200,
+      pinned: true,
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      flexibleSpace: LayoutBuilder(
+        builder: (context, constraints) {
+          final fraction = (constraints.maxHeight - kToolbarHeight) /
+              (200 - kToolbarHeight);
+          final isExpanded = fraction > 0.5;
+
+          return FlexibleSpaceBar(
+            background: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF1D4ED8), Color(0xFF3B82F6)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Stack(
+                children: [
+                  Positioned(
+                    right: -30,
+                    top: -30,
+                    child: Container(
+                      width: 160,
+                      height: 160,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.06),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 50,
+                    bottom: -40,
+                    child: Container(
+                      width: 120,
+                      height: 120,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.05),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                  SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(
+                            'NSB Motors',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withOpacity(0.7),
+                              letterSpacing: 1.5,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Management Dashboard',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
+                            children: [
+                              _heroStat('$activeClients', 'Active\nClients'),
+                              const SizedBox(width: 32),
+                              _heroStat(
+                                  'UGX ${(exchangeRate as num).toStringAsFixed(0)}',
+                                  'Per\nUSD'),
+                              const SizedBox(width: 32),
+                              _heroStat('Online', 'System\nStatus'),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+      actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: IconButton(
+            onPressed: () => context.read<AppProvider>().refresh(),
+            icon: const Icon(Icons.refresh_rounded, size: 20),
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.white.withOpacity(0.15),
+              foregroundColor: Colors.white,
+            ),
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: color, size: 24),
-              const Spacer(),
-            ],
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                value,
-                style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              Text(
-                title,
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  color: Colors.white70,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickActions(BuildContext context, AppProvider appProvider) {
+  Widget _heroStat(String value, String label) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Quick Actions',
-          style: GoogleFonts.poppins(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
+          value,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
             color: Colors.white,
           ),
         ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: _buildActionCard(
-                'Update Database',
-                'Upload new URA data',
-                Icons.storage,
-                const Color(0xFF4CAF50),
-                () {
-                  Navigator.of(context).pushNamed('/database');
-                },
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _buildActionCard(
-                'Manage Clients',
-                'View all desktop clients',
-                Icons.computer,
-                const Color(0xFF667EEA),
-                () {
-                  Navigator.of(context).pushNamed('/clients');
-                },
-              ),
-            ),
-          ],
+        Text(
+          label,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 10,
+            color: Colors.white.withOpacity(0.65),
+            height: 1.4,
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildActionCard(
-    String title,
-    String subtitle,
-    IconData icon,
-    Color color,
-    VoidCallback onTap,
-  ) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.1)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildSectionHeader(String title) {
+    return Text(
+      title.toUpperCase(),
+      style: GoogleFonts.plusJakartaSans(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: _muted,
+        letterSpacing: 1.2,
+      ),
+    );
+  }
+
+  Widget _buildBentoGrid(AppProvider appProvider) {
+    final stats = appProvider.systemStats ?? {};
+    final activeClients = stats['active_clients'] ?? 0;
+    final exchangeRate = (stats['current_exchange_rate'] ?? 3700.0);
+    final lastUpdateRaw = '${stats['last_database_update'] ?? 'Never'}';
+    final lastUpdateDisplay = lastUpdateRaw.contains(' ')
+        ? lastUpdateRaw.split(' ').first
+        : lastUpdateRaw;
+
+    return Column(
+      children: [
+        Row(
           children: [
-            Icon(icon, color: color, size: 32),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              style: GoogleFonts.poppins(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+            Expanded(
+              flex: 3,
+              child: _bentoCard(
+                title: 'Active Clients',
+                value: '$activeClients',
+                icon: Icons.computer_rounded,
+                accent: const Color(0xFF1D4ED8),
+                accentBg: const Color(0xFFEFF6FF),
+                tall: true,
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                color: Colors.white70,
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 2,
+              child: Column(
+                children: [
+                  _bentoCard(
+                    title: 'DB Status',
+                    value: 'Online',
+                    icon: Icons.cloud_done_rounded,
+                    accent: const Color(0xFF059669),
+                    accentBg: const Color(0xFFECFDF5),
+                    tall: false,
+                  ),
+                  const SizedBox(height: 12),
+                  _bentoCard(
+                    title: 'Last Update',
+                    value: lastUpdateDisplay,
+                    icon: Icons.update_rounded,
+                    accent: const Color(0xFF7C3AED),
+                    accentBg: const Color(0xFFF5F3FF),
+                    tall: false,
+                  ),
+                ],
               ),
             ),
           ],
         ),
+        const SizedBox(height: 12),
+        _bentoCardWide(
+          title: 'Exchange Rate',
+          value: 'UGX ${(exchangeRate as num).toStringAsFixed(0)}',
+          subtitle: 'per US Dollar',
+          icon: Icons.currency_exchange_rounded,
+          accent: const Color(0xFFD97706),
+          accentBg: const Color(0xFFFFFBEB),
+        ),
+      ],
+    );
+  }
+
+  Widget _bentoCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color accent,
+    required Color accentBg,
+    required bool tall,
+  }) {
+    return Container(
+      height: tall ? 160 : 82,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _border),
+      ),
+      child: tall
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: accentBg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: accent, size: 20),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      value,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w800,
+                        color: _ink,
+                        letterSpacing: -1,
+                      ),
+                    ),
+                    Text(
+                      title,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        color: _secondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: accentBg,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: accent, size: 17),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        value,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: _ink,
+                          height: 1.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        title,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 10,
+                          color: _secondary,
+                          height: 1.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _bentoCardWide({
+    required String title,
+    required String value,
+    required String subtitle,
+    required IconData icon,
+    required Color accent,
+    required Color accentBg,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: accentBg,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: accent, size: 24),
+          ),
+          const SizedBox(width: 16),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: _ink,
+                    letterSpacing: -0.5,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  '$title  •  $subtitle',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    color: _secondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: accentBg,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              'LIVE',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: accent,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickActions(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _quickActionCard(
+            'Update Database',
+            'Upload URA data',
+            Icons.cloud_upload_rounded,
+            const Color(0xFF059669),
+            const Color(0xFFECFDF5),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _quickActionCard(
+            'Manage Clients',
+            'View desktop clients',
+            Icons.computer_rounded,
+            const Color(0xFF1D4ED8),
+            const Color(0xFFEFF6FF),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _quickActionCard(
+    String title,
+    String subtitle,
+    IconData icon,
+    Color accent,
+    Color accentBg,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: accentBg,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: accent, size: 20),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            title,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: _ink,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 11,
+              color: _secondary,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -308,164 +547,135 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildRecentActivity(AppProvider appProvider) {
     final clients = appProvider.desktopClients;
     final stats = appProvider.systemStats ?? {};
-    
-    // Get most recent client activity
+
     String? mostRecentClientTime;
     String? mostRecentClientName;
     if (clients.isNotEmpty) {
       final latestClient = clients.first;
       mostRecentClientName = latestClient['client_name'] ?? 'Unknown';
       final lastSeen = latestClient['last_seen'] ?? '';
-      if (lastSeen.isNotEmpty) {
-        mostRecentClientTime = _formatTimeAgo(lastSeen);
-      }
+      if (lastSeen.isNotEmpty) mostRecentClientTime = _formatTimeAgo(lastSeen);
     }
-    
-    // Get exchange rate info
+
     final exchangeRate = stats['current_exchange_rate'] ?? 3700.0;
     final exchangeRateDate = stats['exchange_rate_date'];
     String? exchangeRateTime;
     if (exchangeRateDate != null) {
       exchangeRateTime = _formatTimeAgo(exchangeRateDate.toString());
     }
-    
-    // Get last database update
+
     final lastDbUpdate = stats['last_database_update'];
     final lastDbUpdateDate = stats['last_update_date'];
     String? dbUpdateTime;
     if (lastDbUpdateDate != null && lastDbUpdate != 'Never') {
       dbUpdateTime = _formatTimeAgo(lastDbUpdateDate.toString());
     }
-    
-    List<Widget> activityItems = [];
-    
-    // Add client activity if available
+
+    final List<_ActivityItem> items = [];
+
     if (mostRecentClientTime != null && mostRecentClientName != null) {
-      activityItems.add(
-        _buildActivityItem(
-          Icons.computer,
-          'Desktop Client Active',
-          '$mostRecentClientName is online',
-          mostRecentClientTime,
-          const Color(0xFF4CAF50),
-        ),
-      );
-      if (exchangeRateTime != null || dbUpdateTime != null) {
-        activityItems.add(const Divider(color: Colors.white12));
-      }
+      items.add(_ActivityItem(
+        icon: Icons.computer_rounded,
+        title: 'Desktop Client Active',
+        subtitle: '$mostRecentClientName is online',
+        time: mostRecentClientTime,
+        color: const Color(0xFF059669),
+        accentBg: const Color(0xFFECFDF5),
+      ));
     }
-    
-    // Add exchange rate update if available
+
     if (exchangeRateTime != null) {
-      activityItems.add(
-        _buildActivityItem(
-          Icons.update,
-          'Exchange Rate',
-          'USD to UGX: ${exchangeRate.toStringAsFixed(0)}',
-          exchangeRateTime,
-          const Color(0xFFFF9800),
-        ),
-      );
-      if (dbUpdateTime != null) {
-        activityItems.add(const Divider(color: Colors.white12));
-      }
+      items.add(_ActivityItem(
+        icon: Icons.currency_exchange_rounded,
+        title: 'Exchange Rate Updated',
+        subtitle: 'USD to UGX: ${(exchangeRate as num).toStringAsFixed(0)}',
+        time: exchangeRateTime,
+        color: const Color(0xFFD97706),
+        accentBg: const Color(0xFFFFFBEB),
+      ));
     }
-    
-    // Add database update if available
+
     if (dbUpdateTime != null && lastDbUpdate != 'Never') {
-      activityItems.add(
-        _buildActivityItem(
-          Icons.storage,
-          'URA Database',
-          '$lastDbUpdate database',
-          dbUpdateTime,
-          const Color(0xFF2196F3),
+      items.add(_ActivityItem(
+        icon: Icons.storage_rounded,
+        title: 'URA Database',
+        subtitle: '$lastDbUpdate database',
+        time: dbUpdateTime,
+        color: const Color(0xFF7C3AED),
+        accentBg: const Color(0xFFF5F3FF),
+      ));
+    }
+
+    if (items.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _border),
+        ),
+        child: Center(
+          child: Column(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(Icons.history_rounded,
+                    size: 26, color: Colors.grey.shade400),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'No recent activity',
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14, fontWeight: FontWeight.w600, color: _ink),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Activity will show up here',
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12, color: _secondary),
+              ),
+            ],
+          ),
         ),
       );
     }
-    
-    // Show empty state if no activity
-    if (activityItems.isEmpty) {
-      activityItems.add(
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(
-            'No recent activity',
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              color: Colors.white54,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      );
-    }
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Recent Activity',
-          style: GoogleFonts.poppins(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1F3A),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
-          ),
-          child: Column(children: activityItems),
-        ),
-      ],
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        children: [
+          for (int i = 0; i < items.length; i++) ...[
+            _buildActivityRow(items[i]),
+            if (i < items.length - 1)
+              Divider(height: 1, color: _border, indent: 68),
+          ],
+        ],
+      ),
     );
   }
 
-  String _formatTimeAgo(String dateStr) {
-    if (dateStr.isEmpty) return 'Unknown';
-    
-    try {
-      final dateTime = DateTime.parse(dateStr);
-      final now = DateTime.now();
-      final difference = now.difference(dateTime);
-      
-      if (difference.inMinutes < 1) {
-        return 'Just now';
-      } else if (difference.inMinutes < 60) {
-        return '${difference.inMinutes}m ago';
-      } else if (difference.inHours < 24) {
-        return '${difference.inHours}h ago';
-      } else {
-        return '${difference.inDays}d ago';
-      }
-    } catch (e) {
-      return 'Unknown';
-    }
-  }
-
-  Widget _buildActivityItem(
-    IconData icon,
-    String title,
-    String subtitle,
-    String time,
-    Color color,
-  ) {
+  Widget _buildActivityRow(_ActivityItem item) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
+              color: item.accentBg,
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, color: color, size: 20),
+            child: Icon(item.icon, color: item.color, size: 19),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -473,33 +683,61 @@ class _DashboardScreenState extends State<DashboardScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
+                  item.title,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: _ink,
                   ),
                 ),
+                const SizedBox(height: 1),
                 Text(
-                  subtitle,
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    color: Colors.white70,
-                  ),
+                  item.subtitle,
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12, color: _secondary),
                 ),
               ],
             ),
           ),
           Text(
-            time,
-            style: GoogleFonts.poppins(
-              fontSize: 10,
-              color: Colors.white54,
-            ),
+            item.time,
+            style: GoogleFonts.plusJakartaSans(
+                fontSize: 11, color: _muted),
           ),
         ],
       ),
     );
   }
+
+  String _formatTimeAgo(String dateStr) {
+    if (dateStr.isEmpty) return 'Unknown';
+    try {
+      final dateTime = DateTime.parse(dateStr);
+      final difference = DateTime.now().difference(dateTime);
+      if (difference.inMinutes < 1) return 'Just now';
+      if (difference.inMinutes < 60) return '${difference.inMinutes}m ago';
+      if (difference.inHours < 24) return '${difference.inHours}h ago';
+      return '${difference.inDays}d ago';
+    } catch (e) {
+      return 'Unknown';
+    }
+  }
 }
 
+class _ActivityItem {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String time;
+  final Color color;
+  final Color accentBg;
+
+  const _ActivityItem({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.time,
+    required this.color,
+    required this.accentBg,
+  });
+}

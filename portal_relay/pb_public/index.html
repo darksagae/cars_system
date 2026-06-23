@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NSB Motors Portal</title>
+<script src="https://cdn.jsdelivr.net/npm/pocketbase@0.21.3/dist/pocketbase.umd.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --primary: #2563eb;
+  --primary-glow: rgba(37, 99, 235, 0.15);
+  --accent: #7c3aed;
+  --bg: #f8fafc;
+  --glass: rgba(255, 255, 255, 0.8);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --card-bg: rgba(255, 255, 255, 0.9);
+  --ink: #0f172a;
+  --sub: #64748b;
+  --border: #e2e8f0;
+  --radius: 16px;
+  --shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background: var(--bg);
+  background-image: radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
+                    radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), 
+                    radial-gradient(at 100% 0%, hsla(339,49%,30%,1) 0, transparent 50%);
+  background-attachment: fixed;
+  color: var(--ink);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Auth Page ── */
+#auth-page {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 20px;
+}
+.auth-card {
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: 24px;
+  padding: 40px; width: 100%; max-width: 420px;
+  box-shadow: var(--shadow);
+}
+.auth-logo { text-align: center; margin-bottom: 32px; }
+.auth-logo .icon {
+  width: 64px; height: 64px; background: var(--primary);
+  border-radius: 18px; margin: 0 auto 16px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 24px; font-weight: 800;
+  box-shadow: 0 0 20px var(--primary-glow);
+}
+.auth-logo h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+
+/* ── App Layout ── */
+#app {
+  display: none; height: 100vh; flex-direction: column;
+}
+.top-nav {
+  height: 72px; padding: 0 32px; display: flex; align-items: center; justify-content: space-between;
+  background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.nav-tabs {
+  display: flex; gap: 8px; padding: 0 32px; margin-top: 16px;
+}
+.nav-btn {
+  padding: 10px 20px; border-radius: 12px; border: none; background: transparent;
+  color: rgba(255,255,255,0.6); font-weight: 600; cursor: pointer; transition: 0.2s;
+}
+.nav-btn.active { background: rgba(255,255,255,0.1); color: #fff; }
+.nav-btn:hover:not(.active) { color: #fff; }
+
+.main-content {
+  flex: 1; overflow-y: auto; padding: 32px;
+}
+
+/* ── UI Components ── */
+.glass-card {
+  background: var(--card-bg); border-radius: var(--radius); padding: 24px;
+  border: 1px solid var(--border); box-shadow: var(--shadow); margin-bottom: 24px;
+}
+.section-title {
+  font-size: 18px; font-weight: 700; margin-bottom: 20px; display: flex; align-items: center; gap: 10px;
+}
+
+.btn {
+  padding: 12px 24px; border-radius: 12px; font-weight: 700; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 8px; border: none; transition: 0.2s;
+}
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 12px var(--primary-glow); }
+.btn-outline { background: transparent; border: 1.5px solid var(--border); color: var(--ink); }
+
+.field { margin-bottom: 20px; }
+.field label { display: block; font-size: 13px; font-weight: 700; color: var(--sub); margin-bottom: 6px; }
+.field input, .field select, .field textarea {
+  width: 100%; padding: 12px 16px; border-radius: 12px; border: 1.5px solid var(--border);
+  background: #fff; font-family: inherit; font-size: 14px; outline: none; transition: 0.2s;
+}
+.field input:focus { border-color: var(--primary); }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+
+/* ── Invoice Specifics ── */
+.phase-group {
+  padding: 20px; border-radius: 16px; margin-bottom: 16px;
+}
+.phase-upfront { background: rgba(37, 99, 235, 0.05); border: 1px solid rgba(37, 99, 235, 0.1); }
+.phase-settlement { background: rgba(124, 58, 237, 0.05); border: 1px solid rgba(124, 58, 237, 0.1); }
+.phase-title { font-weight: 800; font-size: 14px; text-transform: uppercase; margin-bottom: 16px; display: flex; justify-content: space-between; }
+
+.tax-badge {
+  padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 800;
+  background: #dcfce7; color: #166534;
+}
+
+/* ── Modal ── */
+.modal-backdrop {
+  display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px); z-index: 1000; align-items: center; justify-content: center; padding: 20px;
+}
+.modal-backdrop.open { display: flex; }
+.modal-content {
+  background: #fff; border-radius: 24px; width: 100%; max-width: 900px; max-height: 90vh;
+  display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+}
+.modal-header { padding: 24px 32px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.modal-body { flex: 1; overflow-y: auto; padding: 32px; }
+.modal-footer { padding: 20px 32px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 12px; }
+
+/* ── Table ── */
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; padding: 12px 16px; color: var(--sub); font-size: 12px; font-weight: 800; text-transform: uppercase; }
+td { padding: 16px; border-bottom: 1px solid var(--border); }
+tr:hover td { background: #f1f5f9; }
+
+@media (max-width: 768px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  .main-content { padding: 16px; }
+}
+</style>
+</head>
+<body>
+
+<div id="auth-page">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="icon">NSB</div>
+      <h1>NSB Motors Portal</h1>
+      <p style="color:var(--sub); margin-top:8px">Secure Management Access</p>
+    </div>
+    <div class="field">
+      <label>Machine ID</label>
+      <input type="text" id="login-user" placeholder="e.g. M001">
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="login-pass" placeholder="••••••••">
+    </div>
+    <div id="login-err" style="color:#ef4444; font-size:13px; margin-bottom:16px; display:none"></div>
+    <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Sign In</button>
+  </div>
+</div>
+
+<div id="app">
+  <nav class="top-nav">
+    <div style="display:flex; align-items:center; gap:12px">
+      <div style="width:40px; height:40px; background:var(--primary); border-radius:12px; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:16px">NSB</div>
+      <h2 style="font-weight:800; letter-spacing:-0.5px">Portal</h2>
+    </div>
+    <div style="display:flex; align-items:center; gap:20px">
+      <div style="text-align:right">
+        <div id="user-name" style="font-weight:700; font-size:14px">—</div>
+        <div id="user-id" style="font-size:12px; opacity:0.6">—</div>
+      </div>
+      <button class="btn btn-outline" style="padding:8px 16px; color:#fff; border-color:rgba(255,255,255,0.2)" onclick="doLogout()">Logout</button>
+    </div>
+  </nav>
+
+  <div class="nav-tabs">
+    <button class="nav-btn active" id="tab-dashboard" onclick="showTab('dashboard')">Dashboard</button>
+    <button class="nav-btn" id="tab-invoices" onclick="showTab('invoices')">Invoices</button>
+    <button class="nav-btn" id="tab-clients" onclick="showTab('clients')">Clients</button>
+    <button class="nav-btn" id="tab-mvdb" onclick="showTab('mvdb')">🔍 URA Database</button>
+  </div>
+
+  <main class="main-content" id="content">
+    <div style="text-align:center; padding:100px; opacity:0.5">Initializing...</div>
+  </main>
+</div>
+
+<!-- Invoice Modal -->
+<div class="modal-backdrop" id="inv-modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="inv-modal-title">Create Invoice</h2>
+      <button onclick="closeInvModal()" style="background:none; border:none; font-size:24px; cursor:pointer">&times;</button>
+    </div>
+    <div class="modal-body" id="inv-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeInvModal()">Cancel</button>
+      <button class="btn btn-primary" id="inv-save-btn" onclick="saveInvoice()">Save Document</button>
+    </div>
+  </div>
+</div>
+
+<!-- Client Modal -->
+<div class="modal-backdrop" id="client-modal">
+  <div class="modal-content" style="max-width:500px">
+    <div class="modal-header">
+      <h2 id="client-modal-title">New Client</h2>
+      <button onclick="closeClientModal()" style="background:none; border:none; font-size:24px; cursor:pointer">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field"><label>Full Name</label><input id="c-name"></div>
+      <div class="field"><label>Phone Number</label><input id="c-phone"></div>
+      <div class="field"><label>Email Address</label><input id="c-email"></div>
+      <div class="field"><label>Location / Address</label><input id="c-address"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeClientModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveClient()">Save Client</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" style="position:fixed; bottom:32px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:12px 24px; border-radius:12px; font-weight:600; display:none; z-index:2000"></div>
+
+<script>
+const pb = new PocketBase(window.location.origin);
+pb.autoCancellation(false);
+
+let currentUser = null;
+let machineId   = null;
+let allClients  = [];
+let editingInvoiceId = null;
+
+// ── Tax Engine ────────────────────────────────────────────────────────────────
+class TaxEngine {
+  constructor() {
+    this.vatRate = 0.18;
+    this.whtRate = 0.06;
+    this.infraRate = 0.015;
+  }
+  calculate(cifUsd, rate, dutyPct = 25, hasSurcharge = false, surchargePct = 20) {
+    const cv = cifUsd * rate;
+    const duty = cv * (dutyPct / 100);
+    const surcharge = hasSurcharge ? (cv * (surchargePct / 100)) : 0;
+    const vat = (cv + duty + surcharge) * this.vatRate;
+    const wht = cv * this.whtRate;
+    const infra = cv * this.infraRate;
+    const total = duty + surcharge + vat + wht + infra;
+    return { cv, duty, surcharge, vat, wht, infra, total };
+  }
+}
+const taxEngine = new TaxEngine();
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+async function doLogin() {
+  const u = document.getElementById('login-user').value.trim();
+  const p = document.getElementById('login-pass').value.trim();
+  const err = document.getElementById('login-err');
+  if (!u || !p) { err.textContent = 'Enter credentials'; err.style.display='block'; return; }
+  try {
+    const auth = await pb.collection('machine_users').authWithPassword(u, p);
+    currentUser = auth.record;
+    machineId = currentUser.machine_id;
+    startApp();
+  } catch(e) {
+    err.textContent = 'Invalid Machine ID or password';
+    err.style.display = 'block';
+  }
+}
+
+function startApp() {
+  document.getElementById('auth-page').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('user-name').textContent = currentUser.machine_name;
+  document.getElementById('user-id').textContent = currentUser.machine_id;
+  showTab('dashboard');
+}
+
+function doLogout() {
+  pb.authStore.clear();
+  location.reload();
+}
+
+if (pb.authStore.isValid) {
+  pb.collection('machine_users').authRefresh().then(a => {
+    currentUser = a.record;
+    machineId = currentUser.machine_id;
+    startApp();
+  }).catch(() => pb.authStore.clear());
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function showTab(name) {
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.id === 'tab-'+name));
+  if (name === 'dashboard') renderDashboard();
+  else if (name === 'invoices') renderInvoices();
+  else if (name === 'clients') renderClients();
+  else if (name === 'mvdb') renderMvDb();
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+async function renderDashboard() {
+  const [invs, custs] = await Promise.all([
+    pb.collection('invoices').getList(1, 10, { filter: `machine_id="${machineId}"`, sort: '-created' }),
+    pb.collection('customers').getList(1, 1, { filter: `machine_id="${machineId}"` })
+  ]);
+  allClients = (await pb.collection('customers').getFullList({ filter: `machine_id="${machineId}"` }));
+  
+  document.getElementById('content').innerHTML = `
+    <div class="grid-3">
+      <div class="glass-card"><h3>${invs.totalItems}</h3><p>Total Invoices</p></div>
+      <div class="glass-card"><h3>${custs.totalItems}</h3><p>Active Clients</p></div>
+      <div class="glass-card"><h3>UGX —</h3><p>Revenue</p></div>
+    </div>
+    <div class="glass-card">
+      <div class="section-title">Recent Activity</div>
+      <table>
+        <thead><tr><th>Invoice #</th><th>Client</th><th>Amount</th><th>Status</th></tr></thead>
+        <tbody>
+          ${invs.items.map(i => `<tr><td>${i.invoice_number}</td><td>${i.customer_name}</td><td>${fmtUGX(i.total_amount)}</td><td>${i.status}</td></tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// ── Invoices ──────────────────────────────────────────────────────────────────
+async function renderInvoices() {
+  const res = await pb.collection('invoices').getList(1, 50, { filter: `machine_id="${machineId}"`, sort: '-created' });
+  document.getElementById('content').innerHTML = `
+    <div style="display:flex; justify-content:space-between; margin-bottom:24px">
+      <h2 class="section-title">Invoice Records</h2>
+      <button class="btn btn-primary" onclick="openNewInvoice()">+ Create New</button>
+    </div>
+    <div class="glass-card" style="padding:0">
+      <table>
+        <thead><tr><th>Number</th><th>Client</th><th>Vehicle</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${res.items.map(i => `
+            <tr>
+              <td><strong>${i.invoice_number}</strong></td>
+              <td>${i.customer_name}</td>
+              <td>${i.vehicle_make} ${i.vehicle_model}</td>
+              <td>${fmtUGX(i.total_amount)}</td>
+              <td><span class="tax-badge">${i.status}</span></td>
+              <td>
+                <button class="btn btn-outline" style="padding:4px 12px" onclick="editInvoice('${i.id}')">Edit</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// ── Invoice Form ──────────────────────────────────────────────────────────────
+function invModalHTML(v = {}) {
+  const clientOpts = allClients.map(c => `<option value="${c.id}" ${v.customer_id===c.id?'selected':''}>${c.name}</option>`).join('');
+  return `
+    <div class="grid-2">
+      <div class="field"><label>Invoice Number</label><input id="f-num" value="${v.invoice_number || genInvNum()}"></div>
+      <div class="field"><label>Client</label><select id="f-client"><option value="">Select...</option>${clientOpts}</select></div>
+    </div>
+    <div class="section-title">Vehicle Specification</div>
+    <div class="grid-3">
+      <div class="field"><label>Make</label><input id="f-make" value="${v.vehicle_make || ''}"></div>
+      <div class="field"><label>Model</label><input id="f-model" value="${v.vehicle_model || ''}"></div>
+      <div class="field"><label>Year</label><input id="f-year" type="number" value="${v.vehicle_year || 2018}" onchange="recalcAll()"></div>
+    </div>
+    <div class="grid-3">
+      <div class="field"><label>Engine CC</label><input id="f-cc" type="number" value="${v.engine_size || ''}" onchange="recalcAll()"></div>
+      <div class="field"><label>Tonnage</label><input id="f-ton" value="${v.tonnage || ''}" onchange="recalcAll()"></div>
+      <div class="field"><label>Category</label><select id="f-cat" onchange="recalcAll()"><option value="car" ${v.category==='car'?'selected':''}>Passenger Car</option><option value="truck" ${v.category==='truck'?'selected':''}>Truck / Commercial</option></select></div>
+    </div>
+    
+    <div class="phase-group phase-upfront">
+      <div class="phase-title">Phase 1: Upfront Costs (USD)</div>
+      <div class="grid-3">
+        <div class="field"><label>CIF USD</label><input id="f-cif-usd" type="number" value="${v.car_price_usd || 0}" oninput="recalcAll()"></div>
+        <div class="field"><label>Clearance USD</label><input id="f-clr-usd" type="number" value="${v.clearance_fee_usd || 0}" oninput="recalcAll()"></div>
+        <div class="field"><label>Rate (UGX/USD)</label><input id="f-rate" type="number" value="${v.exchange_rate || 3834.56}" oninput="recalcAll()"></div>
+      </div>
+      <div style="text-align:right; font-weight:800; color:var(--primary)">Total P1: <span id="disp-p1">UGX 0</span></div>
+    </div>
+
+    <div class="phase-group phase-settlement">
+      <div class="phase-title">Phase 2: Settlement & Taxes (UGX)</div>
+      <div id="tax-breakdown" style="font-size:12px; margin-bottom:16px; display:grid; grid-template-columns:1fr 1fr; gap:8px; background:#fff; padding:12px; border-radius:12px">
+        <!-- Filled by JS -->
+      </div>
+      <div class="grid-2">
+        <div class="field"><label>URA Tax Total</label><input id="f-ura" type="number" value="${v.taxes_ura || 0}" oninput="updateTotal()"></div>
+        <div class="field"><label>Number Plates</label><input id="f-plates" type="number" value="${v.number_plates_fee || 714300}" oninput="updateTotal()"></div>
+      </div>
+      <div class="grid-2">
+        <div class="field"><label>Insurance</label><input id="f-ins" type="number" value="${v.third_party_insurance || 0}" oninput="updateTotal()"></div>
+        <div class="field"><label>Agency Fees</label><input id="f-agency" type="number" value="${v.agency_fees || 400000}" oninput="updateTotal()"></div>
+      </div>
+      <div style="text-align:right; font-weight:800; color:var(--accent)">Total P2: <span id="disp-p2">UGX 0</span></div>
+    </div>
+
+    <div style="background:var(--ink); color:#fff; padding:20px; border-radius:16px; display:flex; justify-content:space-between; align-items:center">
+      <span style="font-weight:600">Grand Total Amount</span>
+      <h2 id="disp-grand" style="font-weight:800">UGX 0</h2>
+    </div>
+  `;
+}
+
+function recalcAll() {
+  const cif = parseFloat(document.getElementById('f-cif-usd').value) || 0;
+  const rate = parseFloat(document.getElementById('f-rate').value) || 3834.56;
+  const clr = parseFloat(document.getElementById('f-clr-usd').value) || 0;
+  const isTruck = document.getElementById('f-cat').value === 'truck';
+  
+  const p1 = (cif + clr) * rate;
+  document.getElementById('disp-p1').textContent = fmtUGX(p1);
+
+  const res = taxEngine.calculate(cif, rate, 25, isTruck, 20);
+  const tb = document.getElementById('tax-breakdown');
+  tb.innerHTML = `
+    <div>Duty (25%): <strong>${fmtUGX(res.duty)}</strong></div>
+    <div>Surcharge: <strong>${fmtUGX(res.surcharge)}</strong></div>
+    <div>VAT (18%): <strong>${fmtUGX(res.vat)}</strong></div>
+    <div>WHT (6%): <strong>${fmtUGX(res.wht)}</strong></div>
+    <div style="grid-column:span 2; border-top:1px solid #eee; padding-top:4px">Calc Total: <strong style="color:var(--primary)">${fmtUGX(res.total)}</strong></div>
+  `;
+  
+  document.getElementById('f-ura').value = Math.round(res.total);
+  updateTotal();
+}
+
+function updateTotal() {
+  const cif = parseFloat(document.getElementById('f-cif-usd').value) || 0;
+  const clr = parseFloat(document.getElementById('f-clr-usd').value) || 0;
+  const rate = parseFloat(document.getElementById('f-rate').value) || 3834.56;
+  const p1 = (cif + clr) * rate;
+  
+  const ura = parseFloat(document.getElementById('f-ura').value) || 0;
+  const plates = parseFloat(document.getElementById('f-plates').value) || 0;
+  const ins = parseFloat(document.getElementById('f-ins').value) || 0;
+  const agency = parseFloat(document.getElementById('f-agency').value) || 0;
+  
+  const p2 = ura + plates + ins + agency;
+  document.getElementById('disp-p2').textContent = fmtUGX(p2);
+  document.getElementById('disp-grand').textContent = fmtUGX(p1 + p2);
+}
+
+async function openNewInvoice() {
+  editingInvoiceId = null;
+  document.getElementById('inv-modal-title').textContent = 'Create New Invoice';
+  document.getElementById('inv-modal-body').innerHTML = invModalHTML();
+  document.getElementById('inv-modal').classList.add('open');
+  recalcAll();
+}
+
+async function editInvoice(id) {
+  editingInvoiceId = id;
+  const inv = await pb.collection('invoices').getOne(id);
+  document.getElementById('inv-modal-title').textContent = 'Edit Invoice ' + inv.invoice_number;
+  document.getElementById('inv-modal-body').innerHTML = invModalHTML(inv);
+  document.getElementById('inv-modal').classList.add('open');
+  recalcAll();
+}
+
+function closeInvModal() { document.getElementById('inv-modal').classList.remove('open'); }
+
+async function saveInvoice() {
+  const btn = document.getElementById('inv-save-btn');
+  btn.disabled = true;
+  const data = {
+    machine_id: machineId,
+    invoice_number: document.getElementById('f-num').value,
+    customer_id: document.getElementById('f-client').value,
+    customer_name: document.getElementById('f-client').options[document.getElementById('f-client').selectedIndex].text,
+    vehicle_make: document.getElementById('f-make').value,
+    vehicle_model: document.getElementById('f-model').value,
+    vehicle_year: parseInt(document.getElementById('f-year').value),
+    car_price_usd: parseFloat(document.getElementById('f-cif-usd').value),
+    clearance_fee_usd: parseFloat(document.getElementById('f-clr-usd').value),
+    exchange_rate: parseFloat(document.getElementById('f-rate').value),
+    taxes_ura: parseFloat(document.getElementById('f-ura').value),
+    number_plates_fee: parseFloat(document.getElementById('f-plates').value),
+    third_party_insurance: parseFloat(document.getElementById('f-ins').value),
+    agency_fees: parseFloat(document.getElementById('f-agency').value),
+    total_amount: parseFloat(document.getElementById('disp-grand').textContent.replace(/[^0-9]/g, '')),
+    status: 'pending'
+  };
+  try {
+    if (editingInvoiceId) await pb.collection('invoices').update(editingInvoiceId, data);
+    else await pb.collection('invoices').create(data);
+    closeInvModal();
+    renderInvoices();
+    toast('Document Saved Successfully');
+  } catch(e) { toast('Error saving invoice'); }
+  btn.disabled = false;
+}
+
+// ── URA Database ──────────────────────────────────────────────────────────────
+async function renderMvDb() {
+  document.getElementById('content').innerHTML = `
+    <div class="glass-card">
+      <div class="section-title">URA MV CIF Search</div>
+      <div style="display:flex; gap:12px; margin-bottom:24px">
+        <input id="mv-q" class="field" style="flex:1; margin-bottom:0" placeholder="Search Make, Model or Desc (e.g. Toyota Hiace)..." oninput="debounceMv()">
+        <button class="btn btn-primary" onclick="searchMv()">Search</button>
+      </div>
+      <div id="mv-results"></div>
+    </div>
+  `;
+}
+
+let mvTimer;
+function debounceMv() { clearTimeout(mvTimer); mvTimer = setTimeout(searchMv, 400); }
+
+async function searchMv() {
+  const q = document.getElementById('mv-q').value.trim();
+  if (!q) return;
+  const res = await pb.collection('mv_database').getList(1, 50, {
+    filter: `(make~"${q}" || model~"${q}" || description~"${q}")`,
+    sort: 'make,model,-year'
+  });
+  document.getElementById('mv-results').innerHTML = `
+    <table>
+      <thead><tr><th>Make</th><th>Model</th><th>Year</th><th>CIF USD</th><th>Action</th></tr></thead>
+      <tbody>
+        ${res.items.map(r => `
+          <tr>
+            <td><strong>${r.make}</strong></td><td>${r.model}</td><td>${r.year}</td>
+            <td style="color:var(--primary); font-weight:700">${fmtUSD(r.cif_usd)}</td>
+            <td><button class="btn btn-outline" style="padding:4px 12px" onclick='useMvRecord(${JSON.stringify(r)})'>+ Invoice</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function useMvRecord(r) {
+  openNewInvoice();
+  setTimeout(() => {
+    document.getElementById('f-make').value = r.make;
+    document.getElementById('f-model').value = r.model;
+    document.getElementById('f-year').value = r.year;
+    document.getElementById('f-cif-usd').value = r.cif_usd;
+    recalcAll();
+  }, 100);
+}
+
+// ── Clients ───────────────────────────────────────────────────────────────────
+async function renderClients() {
+  const res = await pb.collection('customers').getList(1, 100, { filter: `machine_id="${machineId}"` });
+  document.getElementById('content').innerHTML = `
+    <div style="display:flex; justify-content:space-between; margin-bottom:24px">
+      <h2 class="section-title">Customer List</h2>
+      <button class="btn btn-primary" onclick="openNewClient()">+ Add Client</button>
+    </div>
+    <div class="glass-card" style="padding:0">
+      <table>
+        <thead><tr><th>Name</th><th>Phone</th><th>Address</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${res.items.map(c => `<tr><td><strong>${c.name}</strong></td><td>${c.phone}</td><td>${c.address}</td><td><button class="btn btn-outline" onclick="editClient('${c.id}')">Edit</button></td></tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function fmtUGX(n) { return 'UGX ' + Math.round(n).toLocaleString(); }
+function fmtUSD(n) { return 'USD ' + Number(n).toLocaleString(undefined, {minimumFractionDigits:2}); }
+function genInvNum() { return 'INV-' + Date.now().toString().slice(-6); }
+function toast(m) {
+  const t = document.getElementById('toast');
+  t.textContent = m; t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}
+</script>
+</body>
+</html>

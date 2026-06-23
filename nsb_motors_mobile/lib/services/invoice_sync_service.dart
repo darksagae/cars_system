@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'supabase_service.dart';
@@ -32,21 +34,16 @@ class InvoiceSyncService {
     try {
       print('🔄 Starting invoice sync...');
       
-      final supabase = SupabaseService.client;
-      final localDb = LocalDatabaseService();
-
       // Get all clients if clientId is not specified
       List<String> clientIds = [];
       if (clientId != null) {
         clientIds = [clientId];
       } else {
-        // Get all clients from the clients table
+        // Get all clients from the desktop_clients table
         try {
-          final clientsResponse = await supabase
-              .from('clients')
-              .select('client_id');
+          final clientsResponse = await SupabaseService.getDesktopClients();
           
-          for (var client in clientsResponse as List) {
+          for (var client in clientsResponse) {
             final id = client['client_id']?.toString();
             if (id != null && id.isNotEmpty) {
               clientIds.add(id);
@@ -69,6 +66,7 @@ class InvoiceSyncService {
       // Fetch invoice activities from each client
       for (final cId in clientIds) {
         try {
+          final localDb = LocalDatabaseService();
           final activities = await SupabaseService.getClientActivities(
             cId,
             timeFilter: timeFilter,
@@ -164,39 +162,8 @@ class InvoiceSyncService {
 
   /// Find PDF in Supabase Storage by invoice number
   Future<String?> _findPdfInStorage(String invoiceNumber) async {
-    try {
-      final supabase = SupabaseService.client;
-      
-      // Search in both 'invoices' and 'emails' folders
-      final folders = ['invoices', 'emails'];
-      
-      for (final folder in folders) {
-        try {
-          final files = await supabase.storage
-              .from('whatsapp_attachments')
-              .list(path: folder);
-          
-          // Look for files matching invoice number
-          for (var file in files) {
-            if (file.name.contains(invoiceNumber)) {
-              // Get public URL
-              final url = supabase.storage
-                  .from('whatsapp_attachments')
-                  .getPublicUrl('$folder/${file.name}');
-              return url;
-            }
-          }
-        } catch (e) {
-          // Folder might not exist, continue to next
-          print('⚠️ Error searching in $folder folder: $e');
-        }
-      }
-      
-      return null;
-    } catch (e) {
-      print('⚠️ Error finding PDF in storage: $e');
-      return null;
-    }
+    // Supabase storage is deprecated; PDFs are now logged directly as Base64/URLs
+    return null;
   }
 
   /// Download and save PDF permanently to local storage
@@ -204,17 +171,24 @@ class InvoiceSyncService {
     try {
       print('📥 Downloading PDF for invoice $invoiceNumber: $pdfUrl');
       
-      // Download PDF from URL
-      final response = await http.get(Uri.parse(pdfUrl));
-      if (response.statusCode != 200) {
-        throw Exception('Failed to download PDF: HTTP ${response.statusCode}');
+      // Download PDF from URL or decode Base64 data URI
+      Uint8List bytes;
+      if (pdfUrl.startsWith('data:')) {
+        final base64String = pdfUrl.substring(pdfUrl.indexOf(',') + 1);
+        bytes = base64.decode(base64String);
+      } else {
+        final response = await http.get(Uri.parse(pdfUrl));
+        if (response.statusCode != 200) {
+          throw Exception('Failed to download PDF: HTTP ${response.statusCode}');
+        }
+        bytes = response.bodyBytes;
       }
 
       // Save PDF to application documents directory
       final appDir = await getApplicationDocumentsDirectory();
       final fileName = 'invoice_${invoiceNumber}_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final pdfFile = File('${appDir.path}/$fileName');
-      await pdfFile.writeAsBytes(response.bodyBytes);
+      await pdfFile.writeAsBytes(bytes);
       
       print('✅ PDF permanently saved: ${pdfFile.path}');
       return pdfFile.path;

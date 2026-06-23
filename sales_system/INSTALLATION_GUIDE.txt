@@ -1,0 +1,43 @@
+NSB MOTORS - PROFESSIONAL WINDOWS INSTALLATION
+=============================================
+
+Thank you for choosing NSB Motors!
+
+This is a complete installation package that will professionally install the application on your computer.
+
+INSTALLATION INSTRUCTIONS:
+-------------------------
+1. Copy the "NSB_Motors_Installer.zip" file to your computer
+2. Extract the ZIP file by right-clicking and selecting "Extract All..."
+3. Double-click on "NSB_Motors_Installer.exe" to start the installation
+4. Follow the on-screen instructions
+
+The installer will:
+- Install the application to Program Files\NSB Motors
+- Install required Visual C++ Redistributables
+- Create desktop and Start Menu shortcuts
+- Register uninstall information in Programs & Features
+- Launch the application automatically
+
+APPLICATION DETAILS:
+-------------------
+- Name: NSB Motors
+- Executable: nsb_motors.exe
+- Installation Directory: C:\Program Files\NSB Motors
+
+UNINSTALLATION:
+---------------
+To uninstall the application:
+1. Go to Control Panel > Programs and Features
+2. Find "NSB Motors" in the list
+3. Click "Uninstall"
+   OR
+   Run the uninstall.bat file in the installation directory
+
+SYSTEM REQUIREMENTS:
+-------------------
+- Windows 10 or newer (64-bit only)
+- At least 2GB RAM
+- 200MB free disk space
+
+For technical support, please contact the development team.

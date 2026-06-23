@@ -1,0 +1,14 @@
+[Unit]
+Description=NSB Motors PocketBase Backend
+After=network.target
+
+[Service]
+Type=simple
+User=darksagae
+WorkingDirectory=/home/darksagae/Desktop/NSB/cars_system/portal_relay
+ExecStart=/home/darksagae/Desktop/NSB/cars_system/portal_relay/pocketbase serve --http="0.0.0.0:8090" --publicDir="./pb_public"
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

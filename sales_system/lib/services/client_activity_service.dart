@@ -1,36 +1,33 @@
 import 'dart:io';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'remote_command_service.dart';
+import 'postgres_service.dart';
 
-/// Service for logging client activities to Supabase
+/// Service for logging client activities to Neon PostgreSQL
 /// This allows the mobile app to see what users are doing on the desktop client
 class ClientActivityService {
   static final ClientActivityService _instance = ClientActivityService._internal();
   factory ClientActivityService() => _instance;
   ClientActivityService._internal();
 
-  SupabaseClient? _client;
   bool _isInitialized = false;
   final RemoteCommandService _remoteService = RemoteCommandService();
 
-  /// Initialize Supabase connection
+  /// Initialize Postgres connection
   Future<void> initialize() async {
     if (_isInitialized) return;
 
     try {
-      // Initialize remote service if needed (it will check internally)
       await _remoteService.initialize();
-      _client = Supabase.instance.client;
       _isInitialized = true;
-      print('✅ ClientActivityService initialized');
+      print('✅ ClientActivityService initialized (Postgres)');
     } catch (e) {
       print('❌ Error initializing ClientActivityService: $e');
-      // Don't throw - activities can be logged later when connection is ready
     }
   }
 
-  /// Log a user activity to Supabase
+  /// Log a user activity to Neon Postgres
   /// This will be visible in the mobile app's activities view
   Future<bool> logActivity({
     required String action,
@@ -38,14 +35,8 @@ class ClientActivityService {
     Map<String, dynamic>? metadata,
   }) async {
     try {
-      // Initialize if not already done
       if (!_isInitialized) {
         await initialize();
-      }
-
-      if (_client == null) {
-        print('⚠️ Cannot log activity: Supabase client not initialized');
-        return false;
       }
 
       // Get client ID
@@ -54,20 +45,24 @@ class ClientActivityService {
       // Get current username if not provided
       final currentUsername = username ?? await _getCurrentUsername();
 
-      // Log the activity
-      await _client!.from('client_activity').insert({
-        'client_id': clientId,
-        'username': currentUsername,
-        'action': action,
-        'metadata': metadata ?? {},
-        'created_at': DateTime.now().toIso8601String(),
-      });
+      // Log the activity to Neon Postgres
+      await PostgresService.execute(
+        '''
+        INSERT INTO client_activity (client_id, username, action, metadata, created_at)
+        VALUES (@clientId, @username, @action, @metadata::jsonb, NOW())
+        ''',
+        parameters: {
+          'clientId': clientId,
+          'username': currentUsername ?? 'unknown',
+          'action': action,
+          'metadata': jsonEncode(metadata ?? {}),
+        },
+      );
 
       print('✅ Activity logged: $action (user: $currentUsername)');
       return true;
     } catch (e) {
       print('❌ Error logging activity: $e');
-      // Don't throw - activity logging failures shouldn't break the app
       return false;
     }
   }
@@ -75,8 +70,6 @@ class ClientActivityService {
   /// Get current logged-in username (if available)
   Future<String?> _getCurrentUsername() async {
     try {
-      // Try to get from auth service or shared preferences
-      // This is a placeholder - adjust based on your auth implementation
       final prefs = await SharedPreferences.getInstance();
       return prefs.getString('current_username');
     } catch (_) {
@@ -88,16 +81,12 @@ class ClientActivityService {
   Future<bool> logInvoiceCreated(String invoiceNumber, {String? customerName, double? amount, String? localPdfPath}) async {
     String? pdfUrl;
     
-    // Upload PDF to Supabase Storage if local path is provided
+    // Convert PDF to Base64 data URL if local path is provided
     if (localPdfPath != null && localPdfPath.isNotEmpty) {
       try {
         pdfUrl = await _uploadPdfToStorage(localPdfPath, invoiceNumber);
-        if (pdfUrl != null) {
-          print('✅ Invoice PDF uploaded to Supabase Storage: $pdfUrl');
-        }
       } catch (e) {
-        print('⚠️ Failed to upload PDF to Supabase Storage: $e');
-        // Continue without PDF URL - invoice will still be logged
+        print('⚠️ Failed to convert PDF to Base64: $e');
       }
     }
     
@@ -108,24 +97,14 @@ class ClientActivityService {
         if (customerName != null) 'customer_name': customerName,
         if (amount != null) 'amount': amount,
         if (localPdfPath != null) 'local_pdf_path': localPdfPath,
-        if (pdfUrl != null) 'pdf_url': pdfUrl, // Add PDF URL to metadata
+        if (pdfUrl != null) 'pdf_url': pdfUrl,
       },
     );
   }
 
-  /// Upload PDF to Supabase Storage
+  /// Convert PDF to Base64 data URL (replacing remote bucket storage)
   Future<String?> _uploadPdfToStorage(String localPdfPath, String invoiceNumber) async {
     try {
-      if (!_isInitialized) {
-        await initialize();
-      }
-
-      if (_client == null) {
-        print('⚠️ Cannot upload PDF: Supabase client not initialized');
-        return null;
-      }
-
-      // Read PDF file
       final file = File(localPdfPath);
       if (!await file.exists()) {
         print('⚠️ PDF file not found: $localPdfPath');
@@ -133,29 +112,10 @@ class ClientActivityService {
       }
 
       final pdfBytes = await file.readAsBytes();
-
-      // Upload to Supabase Storage
-      final fileName = 'invoices/${DateTime.now().millisecondsSinceEpoch}_invoice_$invoiceNumber.pdf';
-      
-      await _client!.storage
-          .from('whatsapp_attachments') // Reuse same bucket
-          .uploadBinary(
-            fileName,
-            pdfBytes,
-            fileOptions: const FileOptions(
-              contentType: 'application/pdf',
-              upsert: false,
-            ),
-          );
-      
-      // Get public URL
-      final url = _client!.storage
-          .from('whatsapp_attachments')
-          .getPublicUrl(fileName);
-      
-      return url;
+      final base64String = base64Encode(pdfBytes);
+      return 'data:application/pdf;base64,$base64String';
     } catch (e) {
-      print('❌ Error uploading PDF to Supabase Storage: $e');
+      print('❌ Error encoding PDF to Base64: $e');
       return null;
     }
   }
@@ -265,4 +225,3 @@ class ClientActivityService {
     );
   }
 }
-

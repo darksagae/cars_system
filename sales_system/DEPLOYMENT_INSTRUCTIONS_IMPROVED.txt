@@ -1,0 +1,36 @@
+NSB Motors Sales System - Deployment Instructions
+=================================================
+
+Easy Installation:
+------------------
+1. Double-click on "install_and_run.bat" to automatically install dependencies and launch the application
+2. That's it! The application should now be running.
+
+Manual Installation (Alternative):
+----------------------------------
+1. Install the Visual C++ Redistributables:
+   - Run vc_redist.x64.exe and follow the installation wizard
+   - If prompted, restart your computer
+
+2. Run the application:
+   - Double-click on sales_system.exe to start the application
+
+Files included in this package:
+------------------------------
+- sales_system.exe: Main application executable
+- install_and_run.bat: Automated installer and launcher (RECOMMENDED)
+- vc_redist.x64.exe: Visual C++ Redistributable for Visual Studio 2015-2022 (x64)
+- All supporting DLL files
+- data/: Application data and assets folder
+- DEPLOYMENT_INSTRUCTIONS_IMPROVED.txt: This file
+
+Troubleshooting:
+----------------
+If the application still doesn't work:
+1. Right-click on sales_system.exe and select "Run as administrator"
+2. Check Windows Event Viewer for any error messages
+3. Ensure Windows Defender or antivirus software is not blocking the application
+4. Add an exception for the application in your antivirus software
+5. Make sure you're using a 64-bit Windows system (the application will not work on 32-bit systems)
+
+For support, contact the development team.

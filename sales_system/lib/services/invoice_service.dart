@@ -2,7 +2,9 @@ import '../database/database_helper.dart';
 import '../models/invoice.dart';
 import '../models/customer.dart';
 import 'client_activity_service.dart';
+import 'machine_relay_service.dart';
 import 'pdf/pdf_service.dart';
+import 'package:intl/intl.dart';
 
 class InvoiceService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
@@ -18,6 +20,7 @@ class InvoiceService {
       print('- Items count: ${invoice.items.length}');
       print('- Total Amount: ${invoice.totalAmount}');
       
+      await _dbHelper.repairInvoicesIsFinalizedIfNeeded();
       final db = await _dbHelper.database;
       print('Database connection established');
       
@@ -73,19 +76,25 @@ class InvoiceService {
         // Don't fail invoice creation if PDF generation fails
       }
       
-      // Log activity to Supabase (for mobile app visibility) with PDF path
+      // Sync invoice to portal relay (web portal visibility)
       try {
-        await ClientActivityService().logInvoiceCreated(
-          invoice.invoiceNumber,
-          customerName: invoice.customer?.name,
-          amount: invoice.totalAmount,
-          localPdfPath: localPdfPath,
-        );
+        final invoiceWithId = invoice.copyWith(id: invoiceId);
+        MachineRelayService().syncInvoice(invoiceWithId, operation: 'upsert');
       } catch (e) {
-        // Don't fail invoice creation if activity logging fails
+        print('⚠️ Failed to sync invoice to relay: $e');
+      }
+
+      // Log activity to relay portal
+      try {
+        MachineRelayService().reportActivity('create_invoice', details: {
+          'invoice_number': invoice.invoiceNumber,
+          'customer_name': invoice.customer?.name ?? '',
+          'amount': invoice.totalAmount,
+        });
+      } catch (e) {
         print('⚠️ Failed to log invoice creation activity: $e');
       }
-      
+
       return invoiceId;
     } catch (e) {
       print('=== ERROR in invoice creation ===');
@@ -123,7 +132,7 @@ class InvoiceService {
           }
         }
         
-        invoices.add(invoice.copyWith(items: items, customer: customer));
+        invoices.add(invoice.copyWith(items: items, customer: customer).calculateTotals());
       }
     }
     
@@ -156,7 +165,7 @@ class InvoiceService {
         }
       }
       
-      return invoice.copyWith(items: items, customer: customer);
+      return invoice.copyWith(items: items, customer: customer).calculateTotals();
     }
     return null;
   }
@@ -174,7 +183,7 @@ class InvoiceService {
       final invoice = Invoice.fromMap(maps.first);
       if (invoice.id != null) {
         final items = await getInvoiceItems(invoice.id!);
-        return invoice.copyWith(items: items);
+        return invoice.copyWith(items: items).calculateTotals();
       }
     }
     return null;
@@ -195,7 +204,7 @@ class InvoiceService {
       final invoice = Invoice.fromMap(map);
       if (invoice.id != null) {
         final items = await getInvoiceItems(invoice.id!);
-        invoices.add(invoice.copyWith(items: items));
+        invoices.add(invoice.copyWith(items: items).calculateTotals());
       }
     }
     
@@ -228,7 +237,7 @@ class InvoiceService {
       final invoice = Invoice.fromMap(map);
       if (invoice.id != null) {
         final items = await getInvoiceItems(invoice.id!);
-        invoices.add(invoice.copyWith(items: items));
+        invoices.add(invoice.copyWith(items: items).calculateTotals());
       }
     }
     
@@ -250,7 +259,7 @@ class InvoiceService {
     for (var map in maps) {
       final invoice = Invoice.fromMap(map);
       final items = await getInvoiceItems(invoice.id!);
-      invoices.add(invoice.copyWith(items: items));
+      invoices.add(invoice.copyWith(items: items).calculateTotals());
     }
     
     return invoices;
@@ -267,6 +276,7 @@ class InvoiceService {
 
   // Update invoice
   Future<int> updateInvoice(Invoice invoice) async {
+    await _dbHelper.repairInvoicesIsFinalizedIfNeeded();
     final db = await _dbHelper.database;
     
     // Start transaction
@@ -295,15 +305,39 @@ class InvoiceService {
       }
     });
     
-    // Log activity to Supabase (for mobile app visibility)
+    // Sync updated invoice to portal relay
     try {
-      await ClientActivityService().logInvoiceUpdated(invoice.invoiceNumber);
+      MachineRelayService().syncInvoice(invoice, operation: 'upsert');
     } catch (e) {
-      // Don't fail invoice update if activity logging fails
+      print('⚠️ Failed to sync invoice update to relay: $e');
+    }
+
+    try {
+      MachineRelayService().reportActivity('update_invoice', details: {
+        'invoice_number': invoice.invoiceNumber,
+      });
+    } catch (e) {
       print('⚠️ Failed to log invoice update activity: $e');
     }
-    
+
     return invoice.id ?? 0;
+  }
+
+  /// Marks invoice as finalized (no further edit/delete from UI after PDF/email/WhatsApp/print).
+  /// Also moves status out of [draft] so the record reflects an issued document.
+  Future<void> setInvoiceFinalized(int invoiceId) async {
+    await _dbHelper.repairInvoicesIsFinalizedIfNeeded();
+    final db = await _dbHelper.database;
+    await db.update(
+      'invoices',
+      {
+        'isFinalized': 1,
+        'status': InvoiceStatus.sent.index,
+        'updatedAt': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [invoiceId],
+    );
   }
 
   // Update invoice status
@@ -324,11 +358,14 @@ class InvoiceService {
   Future<int> deleteInvoice(int id) async {
     final db = await _dbHelper.database;
     
-    // Get invoice number before deletion for logging
+    // Get invoice number before deletion for logging; block delete if finalized
     String? invoiceNumber;
     try {
       final invoice = await getInvoiceById(id);
       invoiceNumber = invoice?.invoiceNumber;
+      if (invoice?.isFinalized == true) {
+        return 0;
+      }
     } catch (e) {
       print('⚠️ Could not get invoice number for logging: $e');
     }
@@ -357,41 +394,55 @@ class InvoiceService {
       );
     });
     
-    // Log activity to Supabase (for mobile app visibility)
+    // Sync deletion to portal relay
     if (invoiceNumber != null) {
       try {
-        await ClientActivityService().logInvoiceDeleted(invoiceNumber);
+        MachineRelayService().deleteInvoiceSync(invoiceNumber);
       } catch (e) {
-        // Don't fail invoice deletion if activity logging fails
+        print('⚠️ Failed to sync invoice deletion to relay: $e');
+      }
+      try {
+        MachineRelayService().reportActivity('delete_invoice', details: {
+          'invoice_number': invoiceNumber,
+        });
+      } catch (e) {
         print('⚠️ Failed to log invoice deletion activity: $e');
       }
     }
-    
+
     return id;
   }
 
   // Generate next invoice number
   Future<String> generateInvoiceNumber() async {
     final db = await _dbHelper.database;
-    
-    // Get the highest existing invoice number
-    final result = await db.rawQuery('''
-      SELECT invoiceNumber 
-      FROM invoices 
+
+    // New format: INV-DDMM-FFFFF (example: INV-1002-00001)
+    final todaySegment = DateFormat('ddMM').format(DateTime.now());
+
+    // Find highest sequence in invoices already using this format.
+    final rows = await db.rawQuery('''
+      SELECT invoiceNumber
+      FROM invoices
       WHERE invoiceNumber LIKE 'INV-%'
-      ORDER BY CAST(SUBSTR(invoiceNumber, 5) AS INTEGER) DESC
-      LIMIT 1
     ''');
-    
-    int nextNumber = 1;
-    if (result.isNotEmpty) {
-      final lastInvoiceNumber = result.first['invoiceNumber'] as String;
-      final numberPart = lastInvoiceNumber.substring(4); // Remove 'INV-' prefix
-      nextNumber = int.tryParse(numberPart) ?? 0;
-      nextNumber += 1;
+
+    final sequencePattern = RegExp(r'^INV-\d{4}-(\d{5})$');
+    int maxSequence = 0;
+
+    for (final row in rows) {
+      final invoiceNumber = row['invoiceNumber']?.toString() ?? '';
+      final match = sequencePattern.firstMatch(invoiceNumber);
+      if (match != null) {
+        final sequence = int.tryParse(match.group(1) ?? '0') ?? 0;
+        if (sequence > maxSequence) {
+          maxSequence = sequence;
+        }
+      }
     }
-    
-    return 'INV-${nextNumber.toString().padLeft(6, '0')}';
+
+    final nextSequence = (maxSequence + 1).toString().padLeft(5, '0');
+    return 'INV-$todaySegment-$nextSequence';
   }
 
   // Get invoice statistics
@@ -441,7 +492,7 @@ class InvoiceService {
     for (var map in maps) {
       final invoice = Invoice.fromMap(map);
       final items = await getInvoiceItems(invoice.id!);
-      invoices.add(invoice.copyWith(items: items));
+      invoices.add(invoice.copyWith(items: items).calculateTotals());
     }
     
     return invoices;

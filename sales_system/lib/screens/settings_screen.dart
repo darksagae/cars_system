@@ -10,6 +10,7 @@ import 'performance_screen.dart';
 import 'performance/performance_metrics_screen.dart';
 import 'background/background_settings_screen.dart';
 import '../widgets/glass_liquid_theme.dart';
+import '../services/machine_relay_service.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -249,6 +250,14 @@ class SettingsScreen extends StatelessWidget {
                         const SizedBox(height: 16),
                         _buildSettingsCard(
                           context,
+                          'Machine Portal Settings',
+                          'Configure connection to portal.nsbmotors.com',
+                          Icons.settings_remote,
+                          () => _showMachinePortalSettings(context),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildSettingsCard(
+                          context,
                           'System Information',
                           'View system details and version',
                           Icons.info,
@@ -264,6 +273,66 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  void _showMachinePortalSettings(BuildContext context) {
+    final relay = MachineRelayService();
+    final idController = TextEditingController(text: relay.machineId);
+    final pwdController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text('Machine Portal Settings', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: idController,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Machine ID (e.g. M001)',
+                labelStyle: TextStyle(color: Colors.white70),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: pwdController,
+              obscureText: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Machine Password',
+                labelStyle: TextStyle(color: Colors.white70),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Relay URL: https://portal.nsbmotors.com',
+              style: TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (idController.text.isNotEmpty && pwdController.text.isNotEmpty) {
+                await relay.updateConfig(
+                  machineId: idController.text.trim(),
+                  password: pwdController.text.trim(),
+                );
+                if (context.mounted) Navigator.pop(context);
+              }
+            },
+            child: const Text('Save & Connect'),
+          ),
+        ],
       ),
     );
   }

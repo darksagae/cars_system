@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -22,7 +23,6 @@ class WhatsAppQueueProcessor {
   Timer? _pollTimer;
   bool _isProcessing = false;
   bool _isRunning = false;
-  RealtimeChannel? _realtimeChannel;
   final NotificationPreferencesService _prefsService = NotificationPreferencesService();
 
   bool get isRunning => _isRunning;
@@ -49,45 +49,9 @@ class WhatsAppQueueProcessor {
     _subscribeToRealtime();
   }
 
-  /// Subscribe to Supabase Realtime for instant notifications
+  /// Subscribe to Supabase Realtime (Disabled, relying on polling)
   void _subscribeToRealtime() {
-    try {
-      final supabase = SupabaseService.client;
-      
-      // Subscribe to all inserts on the queue table and filter in callback
-      _realtimeChannel = supabase
-          .channel('whatsapp_queue_changes')
-          .onPostgresChanges(
-            event: PostgresChangeEvent.insert,
-            schema: 'public',
-            table: 'whatsapp_message_queue',
-            callback: (payload) async {
-              try {
-                final data = payload.newRecord ?? {};
-                if ((data['status'] as String?) == 'pending') {
-                  print('🔔 New WhatsApp message detected via Realtime!');
-                  
-                  // Check if push notifications are enabled before showing
-                  if (_prefsService.shouldShowNotification()) {
-                    await NotificationService().show('WhatsApp message queued', 'Tap to open and send');
-                  } else {
-                    print('📵 Push notifications disabled - skipping notification');
-                  }
-                  
-                  _processQueue();
-                }
-              } catch (e) {
-                print('⚠️ Realtime callback error: $e');
-              }
-            },
-          )
-          .subscribe();
-
-      print('✅ Realtime subscription active - instant notifications enabled');
-    } catch (e) {
-      print('⚠️ Error setting up realtime subscription: $e');
-      // Continue with polling if realtime fails
-    }
+    print('🔌 Realtime notifications disabled. Processing queue via polling.');
   }
 
   /// Stop processing queue
@@ -95,11 +59,6 @@ class WhatsAppQueueProcessor {
     _isRunning = false;
     _pollTimer?.cancel();
     _pollTimer = null;
-    
-    // Unsubscribe from realtime
-    _realtimeChannel?.unsubscribe();
-    _realtimeChannel = null;
-    
     print('✅ WhatsApp queue processor stopped');
   }
 
@@ -130,15 +89,8 @@ class WhatsAppQueueProcessor {
     _isProcessing = true;
 
     try {
-      final supabase = SupabaseService.client;
-
       // Get pending messages
-      final response = await supabase
-          .from('whatsapp_message_queue')
-          .select('*')
-          .eq('status', 'pending')
-          .order('created_at', ascending: true)
-          .limit(10); // Process up to 10 at a time
+      final response = await SupabaseService.getPendingWhatsAppMessages(limit: 10);
 
       final messages = List<Map<String, dynamic>>.from(response);
 
@@ -168,16 +120,8 @@ class WhatsAppQueueProcessor {
     final mediaPath = message['media_path'] as String?;
 
     try {
-      final supabase = SupabaseService.client;
-
       // Mark as processing
-      await supabase
-          .from('whatsapp_message_queue')
-          .update({
-            'status': 'processing',
-            'updated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', messageId);
+      await SupabaseService.updateWhatsAppQueueStatus(messageId, 'processing');
 
       print('📤 Processing message to $phoneNumber...');
 
@@ -188,15 +132,11 @@ class WhatsAppQueueProcessor {
 
       if (success) {
         // Mark as sent
-        await supabase
-            .from('whatsapp_message_queue')
-            .update({
-              'status': 'sent',
-              'processed_at': DateTime.now().toIso8601String(),
-              'updated_at': DateTime.now().toIso8601String(),
-              'message_id': 'msg_${DateTime.now().millisecondsSinceEpoch}',
-            })
-            .eq('id', messageId);
+        await SupabaseService.updateWhatsAppQueueStatus(
+          messageId,
+          'sent',
+          messageId: 'msg_${DateTime.now().millisecondsSinceEpoch}',
+        );
 
         // Also store in whatsapp_messages table for tracking
         await _storeInMessagesTable(message);
@@ -207,15 +147,11 @@ class WhatsAppQueueProcessor {
         print('✅ Message sent successfully: $messageId');
       } else {
         // Mark as failed
-        await supabase
-            .from('whatsapp_message_queue')
-            .update({
-              'status': 'failed',
-              'error_message': 'Failed to open WhatsApp',
-              'processed_at': DateTime.now().toIso8601String(),
-              'updated_at': DateTime.now().toIso8601String(),
-            })
-            .eq('id', messageId);
+        await SupabaseService.updateWhatsAppQueueStatus(
+          messageId,
+          'failed',
+          errorMessage: 'Failed to open WhatsApp',
+        );
 
         print('❌ Failed to send message: $messageId');
       }
@@ -224,15 +160,11 @@ class WhatsAppQueueProcessor {
 
       // Mark as failed
       try {
-        await SupabaseService.client
-            .from('whatsapp_message_queue')
-            .update({
-              'status': 'failed',
-              'error_message': e.toString(),
-              'processed_at': DateTime.now().toIso8601String(),
-              'updated_at': DateTime.now().toIso8601String(),
-            })
-            .eq('id', messageId);
+        await SupabaseService.updateWhatsAppQueueStatus(
+          messageId,
+          'failed',
+          errorMessage: e.toString(),
+        );
       } catch (updateError) {
         print('❌ Error updating message status: $updateError');
       }
@@ -297,19 +229,24 @@ class WhatsAppQueueProcessor {
     String pdfUrl,
   ) async {
     try {
-      print('📥 Downloading PDF from: $pdfUrl');
-      
-      // Download PDF from URL
-      final response = await http.get(Uri.parse(pdfUrl));
-      if (response.statusCode != 200) {
-        throw Exception('Failed to download PDF: HTTP ${response.statusCode}');
+      // Download PDF from URL or decode Base64 data URI
+      Uint8List bytes;
+      if (pdfUrl.startsWith('data:')) {
+        final base64String = pdfUrl.substring(pdfUrl.indexOf(',') + 1);
+        bytes = base64.decode(base64String);
+      } else {
+        final response = await http.get(Uri.parse(pdfUrl));
+        if (response.statusCode != 200) {
+          throw Exception('Failed to download PDF: HTTP ${response.statusCode}');
+        }
+        bytes = response.bodyBytes;
       }
 
       // Save PDF to temporary directory
       final tempDir = await getTemporaryDirectory();
       final fileName = 'invoice_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final pdfFile = File('${tempDir.path}/$fileName');
-      await pdfFile.writeAsBytes(response.bodyBytes);
+      await pdfFile.writeAsBytes(bytes);
       
       print('✅ PDF downloaded and saved: ${pdfFile.path}');
 
@@ -354,20 +291,7 @@ class WhatsAppQueueProcessor {
   /// Store message in whatsapp_messages table for tracking
   Future<void> _storeInMessagesTable(Map<String, dynamic> queueMessage) async {
     try {
-      final supabase = SupabaseService.client;
-
-      await supabase.from('whatsapp_messages').insert({
-        'message_id': queueMessage['message_id'] ?? 'msg_${DateTime.now().millisecondsSinceEpoch}',
-        'client_phone': queueMessage['phone_number'],
-        'message_content': queueMessage['message_content'],
-        'message_type': queueMessage['message_type'] ?? 'message',
-        'sent_by_machine_id': queueMessage['sent_by_machine_id'],
-        'sent_by_user_id': queueMessage['sent_by_user_id'],
-        'sent_by_user_name': queueMessage['sent_by_user_name'],
-        'sent_at': DateTime.now().toIso8601String(),
-        'status': 'sent',
-      });
-
+      await SupabaseService.storeWhatsAppMessage(queueMessage);
       print('✅ Message stored in whatsapp_messages table');
     } catch (e) {
       print('⚠️ Error storing message in whatsapp_messages: $e');
@@ -427,19 +351,24 @@ class WhatsAppQueueProcessor {
   /// Download and save PDF permanently to local storage
   Future<String?> _downloadAndSavePdf(String pdfUrl, String invoiceNumber) async {
     try {
-      print('📥 Downloading PDF for permanent storage: $pdfUrl');
-      
-      // Download PDF from URL
-      final response = await http.get(Uri.parse(pdfUrl));
-      if (response.statusCode != 200) {
-        throw Exception('Failed to download PDF: HTTP ${response.statusCode}');
+      // Download PDF from URL or decode Base64 data URI
+      Uint8List bytes;
+      if (pdfUrl.startsWith('data:')) {
+        final base64String = pdfUrl.substring(pdfUrl.indexOf(',') + 1);
+        bytes = base64.decode(base64String);
+      } else {
+        final response = await http.get(Uri.parse(pdfUrl));
+        if (response.statusCode != 200) {
+          throw Exception('Failed to download PDF: HTTP ${response.statusCode}');
+        }
+        bytes = response.bodyBytes;
       }
 
       // Save PDF to application documents directory
       final appDir = await getApplicationDocumentsDirectory();
       final fileName = 'invoice_${invoiceNumber}_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final pdfFile = File('${appDir.path}/$fileName');
-      await pdfFile.writeAsBytes(response.bodyBytes);
+      await pdfFile.writeAsBytes(bytes);
       
       print('✅ PDF permanently saved: ${pdfFile.path}');
       return pdfFile.path;

@@ -7,6 +7,7 @@ import '../providers/customer_provider.dart';
 import '../providers/theme_provider.dart';
 import '../models/customer.dart';
 import '../utils/uganda_formatters.dart';
+import '../utils/email_display.dart';
 import '../widgets/glass_container.dart';
 import 'customer_form_screen.dart';
 import 'customer_detail_screen.dart';
@@ -319,7 +320,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        customer.email,
+                        displayEmailOrNa(customer.email),
                         style: GoogleFonts.poppins(
                           fontSize: 14,
                           color: isHover ? Colors.black87 : Colors.white70,

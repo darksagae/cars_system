@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -19,7 +20,6 @@ class BackgroundService {
   BackgroundService._internal();
 
   bool _isRunning = false;
-  RealtimeChannel? _realtimeChannel;
 
   /// Start background service
   Future<void> start() async {
@@ -38,57 +38,24 @@ class BackgroundService {
   /// Stop background service
   void stop() {
     _isRunning = false;
-    _realtimeChannel?.unsubscribe();
-    _realtimeChannel = null;
     print('✅ Background service stopped');
   }
 
   /// Subscribe to Supabase Realtime for instant notifications
   Future<void> _subscribeToRealtime() async {
-    try {
-      final supabase = SupabaseService.client;
-      
-      // Subscribe to inserts on the queue table (filter inside callback)
-      _realtimeChannel = supabase
-          .channel('whatsapp_queue_background')
-          .onPostgresChanges(
-            event: PostgresChangeEvent.insert,
-            schema: 'public',
-            table: 'whatsapp_message_queue',
-            callback: (payload) async {
-              final data = payload.newRecord ?? {};
-              if ((data['status'] as String?) == 'pending') {
-                print('🔔 New WhatsApp message detected in background!');
-                await NotificationService().show('WhatsApp message queued', 'Tap to open and send');
-                await processMessageFromBackground(data);
-              }
-            },
-          )
-          .subscribe();
-
-      print('✅ Background Realtime subscription active');
-    } catch (e) {
-      print('⚠️ Error setting up background realtime: $e');
-    }
+    print('🔌 Background realtime bypassed. Polling is used.');
   }
 
   /// Process a single message from realtime or background
   Future<void> processMessageFromBackground(Map<String, dynamic> messageData) async {
     try {
-      final supabase = SupabaseService.client;
       final messageId = messageData['id'] as String;
       final phoneNumber = messageData['phone_number'] as String;
       final messageContent = messageData['message_content'] as String;
       final mediaPath = messageData['media_path'] as String?;
 
       // Mark as processing
-      await supabase
-          .from('whatsapp_message_queue')
-          .update({
-            'status': 'processing',
-            'updated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', messageId);
+      await SupabaseService.updateWhatsAppQueueStatus(messageId, 'processing');
 
       print('📤 Processing message to $phoneNumber in background...');
 
@@ -99,27 +66,20 @@ class BackgroundService {
 
       if (success) {
         // Mark as sent
-        await supabase
-            .from('whatsapp_message_queue')
-            .update({
-              'status': 'sent',
-              'processed_at': DateTime.now().toIso8601String(),
-              'updated_at': DateTime.now().toIso8601String(),
-            })
-            .eq('id', messageId);
+        await SupabaseService.updateWhatsAppQueueStatus(
+          messageId,
+          'sent',
+          messageId: 'msg_${DateTime.now().millisecondsSinceEpoch}',
+        );
 
         print('✅ Message sent successfully from background: $messageId');
       } else {
         // Mark as failed
-        await supabase
-            .from('whatsapp_message_queue')
-            .update({
-              'status': 'failed',
-              'error_message': 'Failed to open WhatsApp',
-              'processed_at': DateTime.now().toIso8601String(),
-              'updated_at': DateTime.now().toIso8601String(),
-            })
-            .eq('id', messageId);
+        await SupabaseService.updateWhatsAppQueueStatus(
+          messageId,
+          'failed',
+          errorMessage: 'Failed to open WhatsApp',
+        );
       }
     } catch (e) {
       print('❌ Error processing message in background: $e');
@@ -159,17 +119,24 @@ class BackgroundService {
     String pdfUrl,
   ) async {
     try {
-      // Download PDF
-      final response = await http.get(Uri.parse(pdfUrl));
-      if (response.statusCode != 200) {
-        throw Exception('Failed to download PDF');
+      // Download PDF from URL or decode Base64 data URI
+      Uint8List bytes;
+      if (pdfUrl.startsWith('data:')) {
+        final base64String = pdfUrl.substring(pdfUrl.indexOf(',') + 1);
+        bytes = base64.decode(base64String);
+      } else {
+        final response = await http.get(Uri.parse(pdfUrl));
+        if (response.statusCode != 200) {
+          throw Exception('Failed to download PDF');
+        }
+        bytes = response.bodyBytes;
       }
 
       // Save PDF
       final tempDir = await getTemporaryDirectory();
       final fileName = 'invoice_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final pdfFile = File('${tempDir.path}/$fileName');
-      await pdfFile.writeAsBytes(response.bodyBytes);
+      await pdfFile.writeAsBytes(bytes);
 
       // Share via WhatsApp
       final result = await Share.shareXFiles(

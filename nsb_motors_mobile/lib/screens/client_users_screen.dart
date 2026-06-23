@@ -86,7 +86,7 @@ class _ClientUsersScreenState extends State<ClientUsersScreen> {
               alignment: Alignment.centerLeft,
               child: Text(
                 'Users • ${widget.clientName}',
-                style: GoogleFonts.poppins(color: Colors.white),
+                style: GoogleFonts.plusJakartaSans(color: Colors.white),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -115,10 +115,10 @@ class _ClientUsersScreenState extends State<ClientUsersScreen> {
                       Expanded(
                         child: TextField(
                           controller: _userCtrl,
-                          style: GoogleFonts.poppins(color: Colors.white),
+                          style: GoogleFonts.plusJakartaSans(color: Colors.white),
                           decoration: InputDecoration(
                             labelText: 'Username',
-                            labelStyle: GoogleFonts.poppins(color: Colors.white70),
+                            labelStyle: GoogleFonts.plusJakartaSans(color: Colors.white70),
                             enabledBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.white30)),
                             focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.white70)),
                           ),
@@ -129,10 +129,10 @@ class _ClientUsersScreenState extends State<ClientUsersScreen> {
                         child: TextField(
                           controller: _passCtrl,
                           obscureText: true,
-                          style: GoogleFonts.poppins(color: Colors.white),
+                          style: GoogleFonts.plusJakartaSans(color: Colors.white),
                           decoration: InputDecoration(
                             labelText: 'Password',
-                            labelStyle: GoogleFonts.poppins(color: Colors.white70),
+                            labelStyle: GoogleFonts.plusJakartaSans(color: Colors.white70),
                             enabledBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.white30)),
                             focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.white70)),
                           ),
@@ -148,7 +148,7 @@ class _ClientUsersScreenState extends State<ClientUsersScreen> {
                       DropdownButton<String>(
                         value: _role,
                         dropdownColor: Colors.black,
-                        style: GoogleFonts.poppins(color: Colors.white),
+                        style: GoogleFonts.plusJakartaSans(color: Colors.white),
                         items: const [
                           DropdownMenuItem(value: 'user', child: Text('User')),
                           DropdownMenuItem(value: 'admin', child: Text('Admin')),
@@ -174,8 +174,8 @@ class _ClientUsersScreenState extends State<ClientUsersScreen> {
                       final u = _users[index];
                       return ListTile(
                         leading: const Icon(Icons.person, color: Colors.white70),
-                        title: Text(u['username'] ?? '', style: GoogleFonts.poppins(color: Colors.white)),
-                        subtitle: Text('Role: ${u['role'] ?? 'user'}', style: GoogleFonts.poppins(color: Colors.white70)),
+                        title: Text(u['username'] ?? '', style: GoogleFonts.plusJakartaSans(color: Colors.white)),
+                        subtitle: Text('Role: ${u['role'] ?? 'user'}', style: GoogleFonts.plusJakartaSans(color: Colors.white70)),
                         trailing: IconButton(
                           icon: const Icon(Icons.sync, color: Colors.white70),
                           tooltip: 'Queue sync of this user only',
@@ -209,7 +209,7 @@ class _ClientUsersScreenState extends State<ClientUsersScreen> {
 extension _Snack on ScaffoldMessengerState {
   void showMessage(String msg, {bool error = false}) {
     showSnackBar(SnackBar(
-      content: Text(msg, style: GoogleFonts.poppins()),
+      content: Text(msg, style: GoogleFonts.plusJakartaSans()),
       backgroundColor: error ? Colors.red : const Color(0xFF2D3748),
     ));
   }

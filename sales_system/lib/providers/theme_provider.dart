@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/glass_liquid_theme.dart';
 
 class ThemeProvider extends ChangeNotifier {
@@ -46,6 +47,12 @@ class ThemeProvider extends ChangeNotifier {
   };
   
   String _currentTheme = 'modern_glass';
+  static const String _prefsThemeKey = 'nsb_theme_key';
+  static const String _prefsHueKey = 'nsb_theme_hue';
+  static const String _prefsIntensityKey = 'nsb_theme_intensity';
+  static const String _prefsPrimaryArgbKey = 'nsb_theme_primary_argb';
+  static const String _prefsSecondaryArgbKey = 'nsb_theme_secondary_argb';
+  static const String _prefsAccentArgbKey = 'nsb_theme_accent_argb';
 
   ThemeProvider() {
     // Initialize global theme colors to match default selection
@@ -94,6 +101,7 @@ class ThemeProvider extends ChangeNotifier {
     }
     
     if (changed) {
+      _currentTheme = 'custom';
       // Update the global theme
       GlassLiquidTheme.updateBackgroundColors(
         primary: _primaryBackground,
@@ -101,6 +109,7 @@ class ThemeProvider extends ChangeNotifier {
         accent: _accentBackground,
       );
       notifyListeners();
+      _persistThemeState();
     }
   }
   
@@ -129,6 +138,56 @@ class ThemeProvider extends ChangeNotifier {
       );
       
       notifyListeners();
+      _persistThemeState();
+    }
+  }
+
+  /// Persists preset name, hue, intensity, and the three background colors so startup matches last user choice.
+  Future<void> _persistThemeState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefsThemeKey, _currentTheme);
+      await prefs.setDouble(_prefsHueKey, _hue);
+      await prefs.setDouble(_prefsIntensityKey, _intensity);
+      await prefs.setInt(_prefsPrimaryArgbKey, _primaryBackground.toARGB32());
+      await prefs.setInt(_prefsSecondaryArgbKey, _secondaryBackground.toARGB32());
+      await prefs.setInt(_prefsAccentArgbKey, _accentBackground.toARGB32());
+    } catch (_) {
+      // Ignore persistence errors; theme still works in-memory
+    }
+  }
+
+  Future<void> loadFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final p = prefs.getInt(_prefsPrimaryArgbKey);
+      final s = prefs.getInt(_prefsSecondaryArgbKey);
+      final a = prefs.getInt(_prefsAccentArgbKey);
+      if (p != null && s != null && a != null) {
+        _primaryBackground = Color(p);
+        _secondaryBackground = Color(s);
+        _accentBackground = Color(a);
+        _hue = prefs.getDouble(_prefsHueKey) ?? _hue;
+        _intensity = prefs.getDouble(_prefsIntensityKey) ?? _intensity;
+        final name = prefs.getString(_prefsThemeKey);
+        if (name != null && name.isNotEmpty) {
+          _currentTheme = name;
+        }
+        GlassLiquidTheme.updateBackgroundColors(
+          primary: _primaryBackground,
+          secondary: _secondaryBackground,
+          accent: _accentBackground,
+        );
+        notifyListeners();
+        return;
+      }
+      // Legacy: only named preset was saved
+      final saved = prefs.getString(_prefsThemeKey);
+      if (saved != null && _themes.containsKey(saved)) {
+        setTheme(saved);
+      }
+    } catch (_) {
+      // If prefs are unavailable, keep default theme
     }
   }
   
@@ -165,6 +224,7 @@ class ThemeProvider extends ChangeNotifier {
       accent: _accentBackground,
     );
     notifyListeners();
+    _persistThemeState();
   }
 
   List<Color> _generateColorsFromHueIntensity(double hue, double intensity) {

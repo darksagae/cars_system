@@ -208,8 +208,13 @@ Total Tax Payable: ${totalTaxUGX.toStringAsFixed(2)} UGX
         ? engine.computeWithSurcharge(inputs)
         : engine.computeWithoutSurcharge(inputs);
 
+    // Determine sheet used based on actual environmental levy, not just category
+    // If environmental levy > 0, it's "with surcharge", otherwise "without surcharge"
+    final bool hasEnvironmentalLevy = outputs.surchargeUgx > 0;
+    final String sheetUsedValue = hasEnvironmentalLevy ? 'with surcharge' : 'without surcharge';
+
     return TaxCalculationResult(
-      sheetUsed: withSurcharge ? 'with surcharge' : 'without surcharge',
+      sheetUsed: sheetUsedValue,
       vehicleCategory: vehicleType,
       cifUSD: cifUSD,
       exchangeRate: exchangeRate,

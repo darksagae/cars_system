@@ -3,12 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import '../services/pairing_service.dart';
 import '../services/remote_command_service.dart';
 import '../widgets/glass_liquid_theme.dart';
-import '../services/remote_command_executor.dart';
-
-class PairingLockScreen extends StatefulWidget {
+import '../services/remote_command_executor.dart';class PairingLockScreen extends StatefulWidget {
   const PairingLockScreen({super.key});
 
   @override
@@ -33,12 +32,30 @@ class _PairingLockScreenState extends State<PairingLockScreen> {
 
   Future<void> _loadPayload() async {
     final data = await _pairingService.buildPairingPayload();
-    await _remoteService.initialize();
+    
+    // Check if we have internet connectivity before initializing remote service
+    final connectivityResult = await (Connectivity().checkConnectivity());
+    bool hasInternet = connectivityResult != ConnectivityResult.none;
+    
+    // Even if we don't have internet, we should still show the UI
+    // But we won't initialize remote services or start polling
+    
     setState(() {
       _payload = data;
       _isLoading = false;
     });
-    _startPolling();
+    
+    // Initialize remote service and start polling only if we have connectivity
+    if (hasInternet) {
+      try {
+        await _remoteService.initialize();
+        _startPolling();
+      } catch (e) {
+        // If initialization fails, we continue without remote services
+        // but still show the QR code for manual pairing when internet returns
+        print('Failed to initialize remote service: $e');
+      }
+    }
   }
 
   void _startPolling() {

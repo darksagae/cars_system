@@ -85,9 +85,12 @@ dependencies:
   # JSON handling
   convert: ^3.1.1
   
-  # Supabase for remote control
-  supabase_flutter: ^2.10.3
+  # Direct Neon/Vercel PostgreSQL Database
+  postgres: ^3.1.2
   http: ^1.5.0
+  
+  # Connectivity check
+  connectivity_plus: ^6.0.3
   qr_flutter: ^4.1.0
   crypto: ^3.0.3
   uuid: ^4.5.1

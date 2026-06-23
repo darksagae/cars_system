@@ -8,6 +8,7 @@ import '../providers/theme_provider.dart';
 import '../widgets/glass_liquid_theme.dart';
 import '../providers/invoice_provider.dart';
 import '../providers/payment_provider.dart';
+import '../utils/email_display.dart';
 
 class CustomerFormScreen extends StatefulWidget {
   final Customer? customer;
@@ -43,7 +44,7 @@ class _CustomerFormScreenState extends State<CustomerFormScreen> {
   void _populateFields() {
     final customer = widget.customer!;
     _nameController.text = customer.name;
-    _emailController.text = customer.email;
+    _emailController.text = isRealCustomerEmail(customer.email) ? customer.email : '';
     _phoneController.text = customer.phone;
     _addressController.text = customer.address;
     _cityController.text = customer.city;
@@ -191,13 +192,11 @@ class _CustomerFormScreenState extends State<CustomerFormScreen> {
         const SizedBox(height: 16),
         _buildTextField(
           controller: _emailController,
-          label: 'Email Address',
+          label: 'Email Address (optional)',
           icon: Icons.email,
           keyboardType: TextInputType.emailAddress,
           validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please enter email address';
-            }
+            if (value == null || value.isEmpty) return null;
             if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
               return 'Please enter a valid email address';
             }

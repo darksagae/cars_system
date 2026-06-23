@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NSB Motors — Sales Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --canvas:#F8FAFC;--surface:#fff;--ink:#0F172A;--secondary:#64748B;
+  --border:#E2E8F0;--accent:#1D4ED8;--accent-l:#EFF6FF;
+  --green:#059669;--green-l:#ECFDF5;--red:#DC2626;--red-l:#FEF2F2;
+  --amber:#D97706;--amber-l:#FFFBEB;--orange:#EA580C;--r:16px;
+}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--canvas);color:var(--ink);min-height:100vh}
+
+/* Login */
+#login{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:40px;width:100%;max-width:420px}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:32px}
+.brand-mark{width:42px;height:42px;background:var(--ink);border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:18px}
+.brand-name{font-size:17px;font-weight:700}.brand-sub{font-size:12px;color:var(--secondary)}
+h2{font-size:21px;font-weight:800;margin-bottom:4px}
+.sub{font-size:13px;color:var(--secondary);margin-bottom:24px}
+.login-tabs{display:flex;gap:8px;margin-bottom:20px}
+.login-tab{flex:1;padding:8px;border:1px solid var(--border);border-radius:10px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;background:var(--canvas);color:var(--secondary);transition:.15s}
+.login-tab.active{background:var(--accent-l);border-color:var(--accent);color:var(--accent)}
+label{display:block;font-size:12px;font-weight:700;margin-bottom:5px;color:var(--ink)}
+input,select{width:100%;padding:11px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit;font-size:14px;background:var(--canvas);color:var(--ink);outline:none;margin-bottom:14px;transition:.15s;-webkit-appearance:none}
+input:focus,select:focus{border-color:var(--accent)}
+.err{background:var(--red-l);border:1px solid #FECACA;color:var(--red);padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:14px;display:none}
+.btn-login{width:100%;padding:13px;background:var(--ink);color:#fff;border:none;border-radius:10px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:.15s}
+.btn-login:hover{opacity:.85}.btn-login:disabled{opacity:.4;cursor:default}
+
+/* App shell */
+#app{display:none;min-height:100vh}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;height:58px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20}
+.topbar-left{display:flex;align-items:center;gap:12px}
+.topbar-mark{width:30px;height:30px;background:var(--ink);border-radius:7px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:13px}
+.topbar-title{font-size:15px;font-weight:700}
+.nav{display:flex;gap:4px;margin-left:20px}
+.nav-btn{padding:6px 14px;border-radius:8px;border:none;background:transparent;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;color:var(--secondary);transition:.15s}
+.nav-btn:hover{background:var(--canvas)}.nav-btn.active{background:var(--accent-l);color:var(--accent)}
+.role-chip{background:var(--accent-l);color:var(--accent);font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.ws-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.ws-dot.ok{background:var(--green)}.ws-dot.err{background:var(--red)}.ws-dot.wait{background:var(--amber)}
+.btn-sm{padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:var(--canvas);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink)}
+.btn-sm:hover{background:var(--border)}
+.main{padding:24px;max-width:1280px;margin:0 auto}
+.sec-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--secondary);margin-bottom:10px}
+.sec-title{font-size:20px;font-weight:800;margin-bottom:4px}
+.sec-meta{font-size:13px;color:var(--secondary);margin-bottom:20px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px}
+.chip{padding:8px 16px;border-radius:20px;border:1px solid var(--border);background:var(--canvas);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;color:var(--secondary);transition:.15s}
+.chip:hover{background:var(--accent-l);border-color:var(--accent);color:var(--accent)}
+
+/* Machine grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px;margin-bottom:28px}
+.mc{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:18px}
+.mc-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px}
+.mc-name{font-size:14px;font-weight:700}.mc-loc{font-size:11px;color:var(--secondary);margin-top:2px}
+.badge{font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+.badge-on{background:var(--green-l);color:var(--green)}.badge-off{background:var(--canvas);color:var(--secondary);border:1px solid var(--border)}
+.mc-info{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.info-row{display:flex;align-items:center;gap:8px;font-size:12px}
+.info-val{font-weight:600}.info-lbl{color:var(--secondary)}
+.bar-wrap{margin-top:8px}.bar-labels{display:flex;justify-content:space-between;font-size:10px;color:var(--secondary);margin-bottom:3px}
+.bar{width:100%;height:3px;background:var(--canvas);border-radius:2px;overflow:hidden;margin-bottom:4px}
+.bar-fill{height:100%;border-radius:2px;transition:width .5s}
+.bar-cpu{background:var(--accent)}.bar-mem{background:var(--green)}
+.mc-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:12px}
+.act-btn{padding:7px 0;border-radius:8px;border:1px solid var(--border);background:var(--canvas);font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;color:var(--ink);transition:.15s}
+.act-btn:hover{background:var(--accent-l);border-color:var(--accent);color:var(--accent)}
+.act-btn.danger:hover{background:var(--red-l);border-color:#FECACA;color:var(--red)}
+
+/* Feed */
+.feed-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.feed-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)}
+.feed-title{font-size:13px;font-weight:700}
+.feed-body{max-height:420px;overflow-y:auto}
+.act-item{display:flex;align-items:flex-start;gap:10px;padding:10px 18px;border-bottom:1px solid var(--canvas);transition:.1s}
+.act-item:hover{background:var(--canvas)}
+.dot{width:7px;height:7px;border-radius:50%;margin-top:4px;flex-shrink:0}
+.dot-ok{background:var(--green)}.dot-fail{background:var(--red)}.dot-info{background:var(--accent)}
+.act-action{font-size:12px;font-weight:600}
+.act-meta{font-size:11px;color:var(--secondary);margin-top:1px}
+.act-time{font-size:11px;color:var(--secondary);margin-left:auto;white-space:nowrap;padding-left:8px}
+.empty{text-align:center;padding:36px 20px;color:var(--secondary);font-size:13px}
+
+/* Hero (portal user) */
+.hero{background:var(--ink);border-radius:var(--r);padding:22px 24px;color:#fff;margin-bottom:20px}
+.hero-name{font-size:20px;font-weight:800}.hero-sub{font-size:12px;opacity:.5;margin-top:2px}
+.stat-row{display:flex;gap:12px;margin-top:16px;flex-wrap:wrap}
+.stat{background:rgba(255,255,255,.08);border-radius:10px;padding:12px 16px}
+.stat-val{font-size:18px;font-weight:800}.stat-lbl{font-size:10px;opacity:.45;margin-top:2px;text-transform:uppercase;letter-spacing:.5px}
+
+/* KPIs */
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;margin-bottom:28px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px}
+.kpi-val{font-size:22px;font-weight:800;margin-bottom:2px;word-break:break-all}
+.kpi-lbl{font-size:11px;color:var(--secondary);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.kpi-accent{border-left:3px solid var(--accent)}.kpi-green{border-left:3px solid var(--green)}
+.kpi-orange{border-left:3px solid var(--orange)}.kpi-red{border-left:3px solid var(--red)}
+
+/* Invoice list */
+.toolbar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+.search-wrap{flex:1;min-width:200px;position:relative}
+.search-wrap input{margin-bottom:0;padding-left:36px}
+.search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--secondary);font-size:14px;pointer-events:none}
+.filter-select{width:auto;min-width:130px;margin-bottom:0;cursor:pointer}
+.inv-table{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;width:100%}
+.inv-table table{width:100%;border-collapse:collapse}
+.inv-table th{background:var(--canvas);padding:10px 14px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--secondary);border-bottom:1px solid var(--border)}
+.inv-table td{padding:12px 14px;font-size:13px;border-bottom:1px solid var(--canvas);vertical-align:middle}
+.inv-table tr:last-child td{border-bottom:none}
+.inv-table tr:hover td{background:#F1F5F9;cursor:pointer}
+.inv-num{font-weight:700;color:var(--accent)}
+.inv-customer{font-weight:600}
+.inv-amount{font-weight:700;text-align:right}
+.inv-date{color:var(--secondary)}
+.status-pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+.s-draft{background:#F1F5F9;color:var(--secondary)}
+.s-sent{background:var(--accent-l);color:var(--accent)}
+.s-pending{background:var(--amber-l);color:var(--amber)}
+.s-paid{background:var(--green-l);color:var(--green)}
+.s-overdue{background:var(--red-l);color:var(--red)}
+.s-cancelled{background:#F1F5F9;color:var(--secondary)}
+
+/* Invoice detail slide-over */
+.detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:none;align-items:flex-start;justify-content:flex-end}
+.detail-overlay.open{display:flex}
+.detail-panel{background:var(--surface);width:100%;max-width:640px;height:100vh;overflow-y:auto;box-shadow:-8px 0 32px rgba(0,0,0,.15);animation:slideIn .2s ease}
+@keyframes slideIn{from{transform:translateX(30px);opacity:0}to{transform:translateX(0);opacity:1}}
+.detail-header{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--surface);z-index:1}
+.detail-title{font-size:16px;font-weight:800}
+.detail-sub{font-size:12px;color:var(--secondary);margin-top:4px}
+.close-btn{width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--canvas);cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;color:var(--secondary)}
+.close-btn:hover{background:var(--border)}
+.detail-body{padding:24px}
+.detail-section{margin-bottom:22px}
+.detail-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--secondary);margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.detail-field label{font-size:11px;color:var(--secondary);font-weight:600;display:block;margin-bottom:2px}
+.detail-field span{font-size:13px;font-weight:600}
+.detail-table{width:100%;border-collapse:collapse;font-size:12px}
+.detail-table th{text-align:left;padding:6px 10px;background:var(--canvas);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--secondary);border-bottom:1px solid var(--border)}
+.detail-table td{padding:8px 10px;border-bottom:1px solid var(--canvas)}
+.detail-table tr:last-child td{border-bottom:none}
+.total-row{display:flex;justify-content:space-between;padding:8px 0;font-size:13px}
+.total-row.grand{font-size:16px;font-weight:800;border-top:2px solid var(--ink);margin-top:6px;padding-top:10px}
+.total-row.sub{color:var(--secondary);font-size:12px}
+
+/* Modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px}
+.modal{background:var(--surface);border-radius:var(--r);padding:28px;width:100%;max-width:380px}
+.modal h3{font-size:16px;font-weight:700;margin-bottom:6px}
+.modal p{font-size:13px;color:var(--secondary);margin-bottom:18px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+.btn-cancel{padding:9px 18px;border-radius:8px;border:1px solid var(--border);background:var(--canvas);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.btn-confirm{padding:9px 18px;border-radius:8px;border:none;background:var(--ink);color:#fff;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer}
+
+#toast{position:fixed;bottom:24px;right:24px;padding:11px 18px;border-radius:10px;font-size:13px;font-weight:600;color:#fff;z-index:200;opacity:0;transition:opacity .3s;pointer-events:none}
+
+@media(max-width:700px){
+  .topbar{padding:0 14px}.nav{display:none}.main{padding:14px}.card{padding:28px 18px}
+  .kpi-row{grid-template-columns:1fr 1fr}
+  .detail-panel{max-width:100%;animation:none}
+  .detail-grid{grid-template-columns:1fr}
+  .inv-table th:nth-child(3),.inv-table td:nth-child(3){display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login">
+  <div class="card">
+    <div class="brand">
+      <div class="brand-mark">N</div>
+      <div><div class="brand-name">NSB Motors</div><div class="brand-sub">Sales Portal</div></div>
+    </div>
+    <h2>Sign in</h2>
+    <p class="sub">Invoices · Machines · Dashboard</p>
+    <div class="login-tabs">
+      <button class="login-tab active" onclick="setTab('machine')">Machine Login</button>
+      <button class="login-tab" onclick="setTab('admin')">Admin</button>
+    </div>
+    <div id="err" class="err"></div>
+    <div id="mid-wrap">
+      <label for="mid">Machine ID</label>
+      <input id="mid" type="text" placeholder="e.g. M001" autocomplete="off"
+             oninput="this.value=this.value.toUpperCase()">
+    </div>
+    <label for="pwd">Password</label>
+    <input id="pwd" type="password" placeholder="Enter password"
+           onkeydown="if(event.key==='Enter')login()">
+    <button class="btn-login" id="login-btn" onclick="login()">Sign In →</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-mark">N</div>
+      <div class="topbar-title">NSB Motors Portal</div>
+      <nav class="nav" id="nav"></nav>
+    </div>
+    <div class="topbar-right">
+      <span class="ws-dot wait" id="ws-dot"></span>
+      <span id="role-chip" class="role-chip"></span>
+      <button class="btn-sm" onclick="logout()">Sign Out</button>
+    </div>
+  </div>
+  <div class="main" id="main"></div>
+</div>
+
+<!-- Invoice detail panel -->
+<div class="detail-overlay" id="detail-overlay" onclick="maybeCloseDetail(event)">
+  <div class="detail-panel" id="detail-panel"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let ws = null, loginTab = 'machine', role = null, myMachineId = null;
+let machines = [], activities = [], invoices = [], adminPwd = '', currentTab = 'machines';
+
+const SN = ['draft','sent','pending','paid','overdue','cancelled'];
+const SL = {draft:'Draft',sent:'Sent',pending:'Pending',paid:'Paid',overdue:'Overdue',cancelled:'Cancelled'};
+
+// ── Login ─────────────────────────────────────────────────────────────────────
+function setTab(t) {
+  loginTab = t;
+  document.querySelectorAll('.login-tab').forEach((b,i) => b.classList.toggle('active',(i===0)===(t==='machine')));
+  document.getElementById('mid-wrap').style.display = t==='machine'?'block':'none';
+}
+function showErr(m) { const e=document.getElementById('err'); e.textContent=m; e.style.display='block'; }
+function hideErr() { document.getElementById('err').style.display='none'; }
+
+function login() {
+  hideErr();
+  const pwd = document.getElementById('pwd').value.trim();
+  const mid = document.getElementById('mid').value.trim();
+  if (!pwd) { showErr('Enter your password'); return; }
+  if (loginTab==='machine' && !mid) { showErr('Enter your Machine ID'); return; }
+  const btn = document.getElementById('login-btn');
+  btn.disabled=true; btn.textContent='Connecting…';
+  const proto = location.protocol==='https:'?'wss':'ws';
+  ws = new WebSocket(`${proto}://${location.host}`);
+  ws.onopen = () => {
+    if (loginTab==='admin') { adminPwd=pwd; ws.send(JSON.stringify({type:'admin_auth',password:pwd})); }
+    else ws.send(JSON.stringify({type:'portal_auth',machine_id:mid,password:pwd}));
+  };
+  ws.onmessage = e => handle(JSON.parse(e.data));
+  ws.onerror = () => { showErr('Connection failed.'); btn.disabled=false; btn.textContent='Sign In →'; };
+  ws.onclose = () => { setDot('err'); if(role) toast('Connection lost. Refresh.','err'); };
+}
+
+function logout() {
+  if(ws){ws.close();ws=null;}
+  role=null;myMachineId=null;machines=[];activities=[];invoices=[];adminPwd='';
+  document.getElementById('app').style.display='none';
+  document.getElementById('login').style.display='flex';
+  document.getElementById('pwd').value='';
+  document.getElementById('login-btn').disabled=false;
+  document.getElementById('login-btn').textContent='Sign In →';
+}
+
+// ── Message handler ───────────────────────────────────────────────────────────
+function handle(msg) {
+  switch(msg.type) {
+    case 'error':
+      showErr(msg.message);
+      document.getElementById('login-btn').disabled=false;
+      document.getElementById('login-btn').textContent='Sign In →';
+      if(ws){ws.close();ws=null;} break;
+
+    case 'admin_ok':
+      role='admin'; machines=msg.machines;
+      openApp('Admin');
+      buildNav(['machines','invoices','dashboard']);
+      switchTab('machines');
+      fetchInvoices();
+      break;
+
+    case 'activities_snapshot':
+      activities=msg.activities;
+      if(role==='admin'&&currentTab==='machines') renderFeed();
+      break;
+
+    case 'portal_ok':
+      role='portal'; myMachineId=msg.machine.id;
+      activities=msg.activities||[];
+      openApp(msg.machine.name);
+      buildNav(['activity']);
+      switchTab('activity');
+      break;
+
+    case 'machines':
+      if(role==='admin'){machines=msg.machines;if(currentTab==='machines')renderMachines();}
+      break;
+
+    case 'activity':
+      if(role==='admin'){
+        activities.unshift(msg.activity);
+        if(activities.length>200)activities.pop();
+        if(currentTab==='machines')renderFeed();
+      } else if(role==='portal'&&msg.activity.machine_id===myMachineId){
+        activities.unshift(msg.activity); renderPortalFeed();
+      }
+      break;
+
+    case 'machine_status':
+      if(role==='portal') updatePortalStatus(msg); break;
+
+    case 'activities_cleared':
+      if(role==='admin'){
+        activities=msg.machine_id?activities.filter(a=>a.machine_id!==msg.machine_id):[];
+        if(currentTab==='machines')renderFeed();
+      } else if(role==='portal'&&(!msg.machine_id||msg.machine_id===myMachineId)){
+        activities=[];renderPortalFeed();
+      }
+      break;
+
+    case 'invoice_upserted': {
+      const inv=msg.invoice;
+      const idx=invoices.findIndex(i=>i.invoiceNumber===inv.invoiceNumber);
+      if(idx>=0)invoices[idx]=inv; else invoices.unshift(inv);
+      if(currentTab==='invoices')renderInvoicesView();
+      if(currentTab==='dashboard')renderDashboard();
+      toast('Invoice '+inv.invoiceNumber+' synced','ok');
+      break;
+    }
+    case 'invoice_deleted':
+      invoices=invoices.filter(i=>i.invoiceNumber!==msg.invoiceNumber);
+      if(currentTab==='invoices')renderInvoicesView();
+      if(currentTab==='dashboard')renderDashboard();
+      break;
+
+    case 'broadcast_sent': toast('Sent to '+msg.count+' machine(s)','ok'); break;
+    case 'command_sent': toast(msg.ok?'Command sent ✓':'Machine is offline',msg.ok?'ok':'err'); break;
+  }
+}
+
+function openApp(label) {
+  document.getElementById('login').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('role-chip').textContent=label;
+  setDot('ok');
+}
+function setDot(s) { document.getElementById('ws-dot').className='ws-dot '+s; }
+
+function buildNav(tabs) {
+  const L={machines:'🖥 Machines',invoices:'📄 Invoices',dashboard:'📊 Dashboard',activity:'📋 Activity'};
+  document.getElementById('nav').innerHTML=tabs.map(t=>
+    `<button class="nav-btn" id="nav-${t}" onclick="switchTab('${t}')">${L[t]}</button>`
+  ).join('');
+}
+function switchTab(tab) {
+  currentTab=tab;
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  const nb=document.getElementById('nav-'+tab); if(nb)nb.classList.add('active');
+  if(tab==='machines')renderAdmin();
+  else if(tab==='invoices')renderInvoicesView();
+  else if(tab==='dashboard')renderDashboard();
+  else if(tab==='activity')renderPortalPage();
+}
+
+// ── MACHINES TAB ──────────────────────────────────────────────────────────────
+function renderAdmin() {
+  const on=machines.filter(m=>m.online).length;
+  document.getElementById('main').innerHTML=`
+    <div class="sec-label">OVERVIEW</div>
+    <div class="sec-title">Machine Dashboard</div>
+    <div class="sec-meta">${on} online · ${machines.length} total machines</div>
+    <div class="sec-label">QUICK ACTIONS</div>
+    <div class="chips">
+      <button class="chip" onclick="askRate()">💱 Update Exchange Rate</button>
+      <button class="chip" onclick="bcast('refresh_database')">🔄 Refresh DB All</button>
+      <button class="chip" onclick="bcast('restart_application')">⟳ Restart All Apps</button>
+      <button class="chip" onclick="bcast('lock_screen')">🔒 Lock All Screens</button>
+      <button class="chip" onclick="clearAll()">🗑 Clear Activities</button>
+    </div>
+    <div class="sec-label">MACHINES</div>
+    <div class="grid" id="machines-grid">${machines.map(machineCard).join('')}</div>
+    <div class="sec-label">ACTIVITY LOG</div>
+    <div class="feed-box">
+      <div class="feed-hdr"><div class="feed-title">Recent Events</div><button class="btn-sm" onclick="clearAll()">Clear All</button></div>
+      <div class="feed-body" id="feed">${renderActs(activities,true)}</div>
+    </div>`;
+}
+function renderMachines(){const g=document.getElementById('machines-grid');if(g)g.innerHTML=machines.map(machineCard).join('');}
+function renderFeed(){const e=document.getElementById('feed');if(e)e.innerHTML=renderActs(activities,true);}
+function machineCard(m) {
+  const cw=m.cpu!=null?Math.min(100,Math.round(m.cpu)):0;
+  const mw=m.mem!=null?Math.min(100,Math.round(m.mem)):0;
+  return `<div class="mc">
+    <div class="mc-top">
+      <div><div class="mc-name">${esc(m.name)}</div><div class="mc-loc">${esc(m.location||m.id)}</div></div>
+      <span class="badge ${m.online?'badge-on':'badge-off'}">${m.online?'Online':'Offline'}</span>
+    </div>
+    <div class="mc-info">
+      ${m.current_user?`<div class="info-row">👤 <span class="info-lbl">User</span><span class="info-val">${esc(m.current_user)}</span></div>`:''}
+      ${m.ip?`<div class="info-row">🔗 <span class="info-lbl">IP</span><span class="info-val">${esc(m.ip)}</span></div>`:''}
+      ${m.platform?`<div class="info-row">💻 <span class="info-lbl">Platform</span><span class="info-val">${esc(m.platform)}</span></div>`:''}
+    </div>
+    ${m.online&&m.cpu!=null?`<div class="bar-wrap">
+      <div class="bar-labels"><span>CPU ${cw}%</span><span>RAM ${mw}%</span></div>
+      <div class="bar"><div class="bar-fill bar-cpu" style="width:${cw}%"></div></div>
+      <div class="bar"><div class="bar-fill bar-mem" style="width:${mw}%"></div></div>
+    </div>`:''}
+    ${m.online?`<div class="mc-actions">
+      <button class="act-btn" onclick="cmd('${m.id}','restart_application')">Restart App</button>
+      <button class="act-btn" onclick="cmd('${m.id}','refresh_database')">Refresh DB</button>
+      <button class="act-btn" onclick="cmd('${m.id}','lock_screen')">Lock Screen</button>
+      <button class="act-btn danger" onclick="cmd('${m.id}','logout_user')">Logout User</button>
+    </div>`:''}
+  </div>`;
+}
+function renderActs(list,showMachine) {
+  if(!list||!list.length) return '<div class="empty">No activities yet</div>';
+  return list.slice(0,100).map(a=>{
+    const dc=a.status==='success'?'dot-ok':a.status==='failed'?'dot-fail':'dot-info';
+    const mn=showMachine?(machines.find(m=>m.id===a.machine_id)?.name||a.machine_id):'';
+    return `<div class="act-item">
+      <div class="dot ${dc}"></div>
+      <div style="flex:1;min-width:0">
+        <div class="act-action">${esc(fmtAction(a.action))}</div>
+        <div class="act-meta">${mn?esc(mn)+' · ':''}${a.username?esc(a.username):'System'}</div>
+      </div>
+      <div class="act-time">${ago(a.timestamp)}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── INVOICES TAB ──────────────────────────────────────────────────────────────
+let invQ='', invSt='';
+
+async function fetchInvoices() {
+  try {
+    const r=await fetch('/api/invoices?key='+encodeURIComponent(adminPwd));
+    if(!r.ok) return;
+    const d=await r.json();
+    invoices=d.invoices||[];
+    if(currentTab==='invoices')renderInvoicesView();
+    if(currentTab==='dashboard')renderDashboard();
+  } catch(e){}
+}
+
+function renderInvoicesView() {
+  let list=invoices;
+  if(invSt) list=list.filter(i=>SN[i.status||0]===invSt);
+  if(invQ){
+    const q=invQ.toLowerCase();
+    list=list.filter(i=>(i.invoiceNumber||'').toLowerCase().includes(q)
+      ||(i.customerName||'').toLowerCase().includes(q)
+      ||(i.vehicleMake||'').toLowerCase().includes(q)
+      ||(i.vehicleModel||'').toLowerCase().includes(q)
+      ||(i.chassisNo||'').toLowerCase().includes(q));
+  }
+
+  const paidCount=invoices.filter(i=>SN[i.status||0]==='paid').length;
+  document.getElementById('main').innerHTML=`
+    <div class="sec-label">SALES SYSTEM</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      <div class="sec-title">Invoices &amp; Quotations</div>
+      <span style="font-size:12px;color:var(--secondary)">${invoices.length} total &nbsp;·&nbsp; <span style="color:var(--green);font-weight:700">${paidCount} paid</span></span>
+    </div>
+    <div class="sec-meta">Real-time from all connected sales machines</div>
+    <div class="toolbar">
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" placeholder="Search invoice #, customer, chassis, make…"
+               value="${esc(invQ)}" oninput="invQ=this.value;renderInvoicesView()">
+      </div>
+      <select class="filter-select" onchange="invSt=this.value;renderInvoicesView()">
+        <option value="">All Statuses</option>
+        ${SN.map(s=>`<option value="${s}"${invSt===s?' selected':''}>${SL[s]}</option>`).join('')}
+      </select>
+      <button class="btn-sm" onclick="fetchInvoices();toast('Refreshed','ok')">↻ Refresh</button>
+    </div>
+    ${list.length===0?`<div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r)">
+      ${invoices.length===0?'No invoices yet — machines will sync when they create invoices':'No invoices match your search'}
+    </div>`:
+    `<div class="inv-table"><table>
+      <thead><tr>
+        <th>Invoice #</th><th>Customer</th><th>Vehicle</th><th>Date</th>
+        <th>Status</th><th style="text-align:right">Total (UGX)</th><th style="text-align:right">Balance</th>
+      </tr></thead>
+      <tbody>
+        ${list.map(inv=>`<tr onclick="openDetail('${esc(inv.invoiceNumber)}')">
+          <td><span class="inv-num">NSB_${esc(inv.invoiceNumber)}</span></td>
+          <td><span class="inv-customer">${esc(inv.customerName||'—')}</span>${inv.customerPhone?`<br><span style="font-size:11px;color:var(--secondary)">${esc(inv.customerPhone)}</span>`:''}</td>
+          <td style="color:var(--secondary);font-size:12px">${esc(inv.vehicleMake||'')} ${esc(inv.vehicleModel||'')}${inv.vehicleYear?' '+inv.vehicleYear:''}</td>
+          <td class="inv-date">${fmtDate(inv.invoiceDate)}</td>
+          <td><span class="status-pill s-${SN[inv.status||0]}">${SL[SN[inv.status||0]]||'?'}</span></td>
+          <td class="inv-amount">${fmtUGX(inv.totalAmount)}</td>
+          <td class="inv-amount" style="color:${parseFloat(inv.balanceAmount)>0?'var(--red)':'var(--green)'}">${fmtUGX(inv.balanceAmount)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`}`;
+}
+
+function openDetail(num) {
+  const inv=invoices.find(i=>i.invoiceNumber===num); if(!inv) return;
+  const sn=SN[inv.status||0];
+  const items=(inv.items||[]).filter(i=>!(i.productName||'').toLowerCase().startsWith('cif'));
+
+  document.getElementById('detail-panel').innerHTML=`
+    <div class="detail-header">
+      <div>
+        <div class="detail-title">NSB_${esc(inv.invoiceNumber)}</div>
+        <div class="detail-sub"><span class="status-pill s-${sn}">${SL[sn]||'?'}</span> &nbsp; ${fmtDate(inv.invoiceDate)}</div>
+      </div>
+      <button class="close-btn" onclick="closeDetail()">✕</button>
+    </div>
+    <div class="detail-body">
+
+      <div class="detail-section">
+        <div class="detail-section-title">Customer</div>
+        <div class="detail-grid">
+          <div class="detail-field"><label>Name</label><span>${esc(inv.customerName||'—')}</span></div>
+          <div class="detail-field"><label>Phone</label><span>${esc(inv.customerPhone||'—')}</span></div>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <div class="detail-section-title">Vehicle Details</div>
+        <div class="detail-grid">
+          <div class="detail-field"><label>Make</label><span>${esc(inv.vehicleMake||'—')}</span></div>
+          <div class="detail-field"><label>Model</label><span>${esc(inv.vehicleModel||'—')}${inv.vehicleModelSuffix?' / '+esc(inv.vehicleModelSuffix):''}</span></div>
+          <div class="detail-field"><label>Year</label><span>${inv.vehicleYear||'—'}</span></div>
+          <div class="detail-field"><label>Engine Size</label><span>${esc(inv.engineSize||'—')}</span></div>
+          <div class="detail-field"><label>Chassis No.</label><span>${esc(inv.chassisNo||'—')}</span></div>
+          <div class="detail-field"><label>Fuel Type</label><span>${esc(inv.fuelType||'—')}</span></div>
+          <div class="detail-field"><label>Transmission</label><span>${esc(inv.transmission||'—')}</span></div>
+          <div class="detail-field"><label>Color</label><span>${esc(inv.color||'—')}</span></div>
+          <div class="detail-field"><label>Stock #</label><span>${esc(inv.stockNo||'—')}</span></div>
+          <div class="detail-field"><label>Country of Origin</label><span>${esc(inv.countryOfOrigin||'—')}</span></div>
+        </div>
+      </div>
+
+      ${parseFloat(inv.firstInstallmentUGX)>0?`
+      <div class="detail-section">
+        <div class="detail-section-title">Phase 1 — Upfront (USD → UGX)</div>
+        <div class="total-row sub"><span>Car Price</span><span>USD ${fmt(inv.carPriceUSD)}</span></div>
+        <div class="total-row sub"><span>Clearance Mombasa</span><span>USD ${fmt(inv.clearanceFeeUSD)}</span></div>
+        <div class="total-row sub"><span>Exchange Rate</span><span>${fmt(inv.exchangeRate)} UGX/USD</span></div>
+        <div class="total-row" style="font-weight:700"><span>First Installment</span><span>${fmtUGX(inv.firstInstallmentUGX)}</span></div>
+      </div>`:''}
+
+      ${parseFloat(inv.secondInstallmentUGX)>0?`
+      <div class="detail-section">
+        <div class="detail-section-title">Phase 2 — Settlement (UGX)</div>
+        <div class="total-row sub"><span>URA Taxes</span><span>${fmtUGX(inv.taxesURA)}</span></div>
+        <div class="total-row sub"><span>Number Plates</span><span>${fmtUGX(inv.numberPlatesFee)}</span></div>
+        <div class="total-row sub"><span>3rd Party Insurance</span><span>${fmtUGX(inv.thirdPartyInsurance)}</span></div>
+        <div class="total-row sub"><span>Agency Fees</span><span>${fmtUGX(inv.agencyFees)}</span></div>
+        <div class="total-row" style="font-weight:700"><span>Second Installment</span><span>${fmtUGX(inv.secondInstallmentUGX)}</span></div>
+      </div>`:''}
+
+      ${items.length>0?`
+      <div class="detail-section">
+        <div class="detail-section-title">Line Items</div>
+        <table class="detail-table">
+          <thead><tr><th>Description</th><th>Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th></tr></thead>
+          <tbody>
+            ${items.map(i=>`<tr>
+              <td>${esc(i.productName||i.description||'—')}</td>
+              <td>${i.quantity||1}</td>
+              <td style="text-align:right">${fmtUGX(i.price)}</td>
+              <td style="text-align:right">${fmtUGX(parseFloat(i.price)*(i.quantity||1))}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`:''}
+
+      <div class="detail-section">
+        <div class="detail-section-title">Totals</div>
+        ${parseFloat(inv.subtotal)>0?`<div class="total-row sub"><span>Subtotal</span><span>${fmtUGX(inv.subtotal)}</span></div>`:''}
+        ${parseFloat(inv.taxAmount)>0?`<div class="total-row sub"><span>Tax</span><span>${fmtUGX(inv.taxAmount)}</span></div>`:''}
+        ${parseFloat(inv.discountAmount)>0?`<div class="total-row sub"><span>Discount</span><span>- ${fmtUGX(inv.discountAmount)}</span></div>`:''}
+        <div class="total-row grand"><span>Grand Total</span><span>${fmtUGX(inv.totalAmount)}</span></div>
+        <div class="total-row sub" style="color:var(--green)"><span>Paid</span><span>${fmtUGX(inv.paidAmount)}</span></div>
+        <div class="total-row" style="color:var(--red);font-weight:700"><span>Balance Due</span><span>${fmtUGX(inv.balanceAmount)}</span></div>
+      </div>
+
+      ${inv.notes?`<div class="detail-section"><div class="detail-section-title">Notes</div><p style="font-size:13px;color:var(--secondary);line-height:1.6">${esc(inv.notes)}</p></div>`:''}
+
+      <div style="padding-bottom:8px">
+        <div style="font-size:11px;color:var(--secondary);margin-bottom:6px">Machine: ${esc(inv._machineId||'—')} &nbsp;·&nbsp; Synced ${ago(inv._syncedAt||new Date().toISOString())}</div>
+      </div>
+    </div>`;
+
+  document.getElementById('detail-overlay').classList.add('open');
+}
+
+function maybeCloseDetail(e) {
+  if(e.target===document.getElementById('detail-overlay')) closeDetail();
+}
+function closeDetail() {
+  document.getElementById('detail-overlay').classList.remove('open');
+}
+
+// ── DASHBOARD TAB ─────────────────────────────────────────────────────────────
+function renderDashboard() {
+  const list=invoices;
+  const total=list.length;
+  const totalAmt=list.reduce((s,i)=>s+(parseFloat(i.totalAmount)||0),0);
+  const paidAmt=list.reduce((s,i)=>s+(parseFloat(i.paidAmount)||0),0);
+  const bal=list.reduce((s,i)=>s+(parseFloat(i.balanceAmount)||0),0);
+  const paidN=list.filter(i=>SN[i.status||0]==='paid').length;
+  const ovN=list.filter(i=>SN[i.status||0]==='overdue').length;
+
+  const monthly={};
+  for(const i of list){const d=i.invoiceDate?i.invoiceDate.slice(0,7):null;if(d)monthly[d]=(monthly[d]||0)+(parseFloat(i.totalAmount)||0);}
+  const months=Object.keys(monthly).sort().slice(-6);
+  const maxV=Math.max(...months.map(m=>monthly[m]),1);
+
+  const byC={};
+  for(const i of list){const n=i.customerName||'Unknown';if(!byC[n])byC[n]={name:n,count:0,total:0};byC[n].count++;byC[n].total+=(parseFloat(i.totalAmount)||0);}
+  const topC=Object.values(byC).sort((a,b)=>b.total-a.total).slice(0,5);
+
+  document.getElementById('main').innerHTML=`
+    <div class="sec-label">OVERVIEW</div>
+    <div class="sec-title">Sales Dashboard</div>
+    <div class="sec-meta">Live summary from all connected machines</div>
+
+    <div class="kpi-row">
+      <div class="kpi kpi-accent"><div class="kpi-val">${total}</div><div class="kpi-lbl">Total Invoices</div></div>
+      <div class="kpi kpi-green"><div class="kpi-val">${fmtUGX(totalAmt)}</div><div class="kpi-lbl">Total Revenue</div></div>
+      <div class="kpi kpi-orange"><div class="kpi-val">${fmtUGX(paidAmt)}</div><div class="kpi-lbl">Collected</div></div>
+      <div class="kpi kpi-red"><div class="kpi-val">${fmtUGX(bal)}</div><div class="kpi-lbl">Outstanding</div></div>
+      <div class="kpi" style="border-left:3px solid var(--green)"><div class="kpi-val">${paidN}</div><div class="kpi-lbl">Paid Invoices</div></div>
+      <div class="kpi" style="border-left:3px solid var(--red)"><div class="kpi-val">${ovN}</div><div class="kpi-lbl">Overdue</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <div class="feed-box">
+        <div class="feed-hdr"><div class="feed-title">Monthly Revenue (last 6 months)</div></div>
+        <div style="padding:20px">
+          ${months.length===0?'<div class="empty">No data yet</div>':months.map(m=>{
+            const pct=Math.round((monthly[m]/maxV)*100);
+            return `<div style="margin-bottom:14px">
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+                <span style="font-weight:600">${m}</span><span style="color:var(--secondary)">${fmtUGX(monthly[m])}</span>
+              </div>
+              <div style="background:var(--canvas);border-radius:4px;height:8px;overflow:hidden">
+                <div style="background:var(--accent);height:100%;width:${pct}%;border-radius:4px;transition:width .4s"></div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+
+      <div class="feed-box">
+        <div class="feed-hdr"><div class="feed-title">Top Customers by Revenue</div></div>
+        ${topC.length===0?'<div class="empty">No data yet</div>':`
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr>
+            <th style="padding:10px 14px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--secondary);border-bottom:1px solid var(--border)">Customer</th>
+            <th style="padding:10px 14px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--secondary);border-bottom:1px solid var(--border)">#</th>
+            <th style="padding:10px 14px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--secondary);border-bottom:1px solid var(--border)">Revenue</th>
+          </tr></thead>
+          <tbody>
+            ${topC.map(c=>`<tr>
+              <td style="padding:10px 14px;font-weight:600">${esc(c.name)}</td>
+              <td style="padding:10px 14px;text-align:center;color:var(--secondary)">${c.count}</td>
+              <td style="padding:10px 14px;text-align:right;font-weight:700">${fmtUGX(c.total)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>`}
+      </div>
+    </div>`;
+}
+
+// ── PORTAL USER ───────────────────────────────────────────────────────────────
+function renderPortalPage() {
+  document.getElementById('main').innerHTML=`
+    <div class="hero">
+      <div class="hero-name">${esc(document.getElementById('role-chip').textContent)}</div>
+      <div class="hero-sub">Your machine session</div>
+      <div class="stat-row">
+        <div class="stat"><div class="stat-val" id="p-status">—</div><div class="stat-lbl">Status</div></div>
+        <div class="stat"><div class="stat-val" id="p-user">—</div><div class="stat-lbl">Current User</div></div>
+      </div>
+    </div>
+    <div class="sec-label">YOUR ACTIVITY LOG</div>
+    <div class="feed-box">
+      <div class="feed-hdr"><div class="feed-title">Recent Activities</div></div>
+      <div class="feed-body" id="portal-feed">${renderActs(activities,false)}</div>
+    </div>`;
+}
+function renderPortalFeed(){const e=document.getElementById('portal-feed');if(e)e.innerHTML=renderActs(activities,false);}
+function updatePortalStatus(msg){
+  const ps=document.getElementById('p-status'),pu=document.getElementById('p-user');
+  if(ps)ps.textContent=msg.online?'🟢 Online':'⚫ Offline';
+  if(pu&&msg.current_user)pu.textContent=msg.current_user;
+}
+
+// ── Commands ──────────────────────────────────────────────────────────────────
+function cmd(mId,command){ws.send(JSON.stringify({type:'command',machine_id:mId,command}));}
+function bcast(command,data){ws.send(JSON.stringify({type:'broadcast',command,data:data||null}));}
+function askRate(){
+  showModal('Update Exchange Rate','Enter new UGX per USD exchange rate for all machines.',
+    [{id:'rate-input',label:'Exchange Rate (UGX)',placeholder:'e.g. 3750',type:'number'}],
+    ()=>{
+      const rate=parseFloat(document.getElementById('rate-input').value);
+      if(!rate||isNaN(rate)){toast('Enter a valid rate','err');return;}
+      bcast('update_exchange_rate',{rate}); closeModal();
+    });
+}
+function clearAll(){if(!confirm('Clear all activity logs?'))return;ws.send(JSON.stringify({type:'clear_activities'}));}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+function showModal(title,desc,fields,onConfirm){
+  const fh=fields.map(f=>`<label for="${f.id}">${f.label}</label><input id="${f.id}" type="${f.type||'text'}" placeholder="${f.placeholder||''}" style="margin-top:4px">`).join('');
+  const d=document.createElement('div');d.className='modal-bg';d.id='modal';
+  d.innerHTML=`<div class="modal"><h3>${title}</h3><p>${desc}</p>${fh}
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-confirm" onclick="_modalConfirm()">Confirm</button>
+    </div></div>`;
+  document.body.appendChild(d);window._modalConfirm=onConfirm;
+}
+function closeModal(){const e=document.getElementById('modal');if(e)e.remove();}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmtAction(a){return a.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());}
+function ago(iso){
+  const s=(Date.now()-new Date(iso))/1000;
+  if(s<60)return 'just now';if(s<3600)return Math.floor(s/60)+'m ago';
+  if(s<86400)return Math.floor(s/3600)+'h ago';return new Date(iso).toLocaleDateString();
+}
+function fmtDate(iso){
+  if(!iso)return '—';
+  try{return new Date(iso).toLocaleDateString('en-UG',{day:'2-digit',month:'short',year:'numeric'});}
+  catch{return String(iso).slice(0,10);}
+}
+function fmt(n){const v=parseFloat(n)||0;return v.toLocaleString('en-UG',{minimumFractionDigits:0,maximumFractionDigits:2});}
+function fmtUGX(n){const v=parseFloat(n)||0;if(v===0)return '—';return 'UGX '+v.toLocaleString('en-UG',{minimumFractionDigits:0,maximumFractionDigits:0});}
+let _tt;
+function toast(msg,type){
+  const e=document.getElementById('toast');e.textContent=msg;
+  e.style.background=type==='ok'?'var(--green)':'var(--red)';e.style.opacity='1';
+  clearTimeout(_tt);_tt=setTimeout(()=>e.style.opacity='0',3000);
+}
+
+setTab('machine');
+</script>
+</body>
+</html>

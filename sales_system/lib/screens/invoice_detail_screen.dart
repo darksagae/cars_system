@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../services/auth_service.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
@@ -8,6 +7,7 @@ import '../widgets/glass_container.dart';
 import '../widgets/glass_liquid_theme.dart';
 import '../models/invoice.dart';
 import '../utils/uganda_formatters.dart';
+import '../utils/email_display.dart';
 import '../services/whatsapp_service.dart';
 import '../services/whatsapp_auto_service.dart';
 import '../services/email_service.dart';
@@ -17,6 +17,7 @@ import '../providers/theme_provider.dart';
 import 'package:provider/provider.dart';
 import '../providers/invoice_provider.dart';
 import '../services/invoice_service.dart';
+import 'invoice_form_screen.dart';
 
 class InvoiceDetailScreen extends StatefulWidget {
   final Invoice invoice;
@@ -31,15 +32,28 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
   late Invoice _invoice;
   bool _isLoading = false;
   bool _isSendingWhatsApp = false;
+  bool _isGeneratingPDF = false;
+  final TextEditingController _modelController = TextEditingController();
+  final TextEditingController _modelSuffixController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _invoice = widget.invoice;
-    // If customer data is missing, load it
-    if (_invoice.customer == null && _invoice.customerId > 0) {
+    _modelController.text = _invoice.vehicleModel;
+    _modelSuffixController.text = _invoice.vehicleModelSuffix;
+    // Always refresh from DB to avoid showing stale totals/items (e.g. after migrations or recalculations).
+    // This also ensures customer + items are fully loaded.
+    if (_invoice.id != null) {
       _loadInvoiceWithCustomer();
     }
+  }
+
+  @override
+  void dispose() {
+    _modelController.dispose();
+    _modelSuffixController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadInvoiceWithCustomer() async {
@@ -55,6 +69,8 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
       if (loadedInvoice != null && mounted) {
         setState(() {
           _invoice = loadedInvoice;
+          _modelController.text = loadedInvoice.vehicleModel;
+          _modelSuffixController.text = loadedInvoice.vehicleModelSuffix;
           _isLoading = false;
         });
       } else {
@@ -167,7 +183,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                   ),
                 ),
                 Text(
-                  'Invoice #${_invoice.invoiceNumber}',
+                  'Invoice NSBmotors_${_invoice.invoiceNumber}',
                   style: GoogleFonts.poppins(
                     fontSize: 16,
                     color: Colors.white.withOpacity(0.8),
@@ -179,17 +195,17 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: _getStatusColor(_invoice.status).withOpacity(0.2),
+              color: _statusBadgeBackgroundColor().withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: _getStatusColor(_invoice.status).withOpacity(0.5),
+                color: _statusBadgeBackgroundColor().withOpacity(0.5),
                 width: 1,
               ),
             ),
             child: Text(
-              _invoice.status.name.toUpperCase(),
+              _statusBadgeLabel(),
               style: GoogleFonts.poppins(
-                color: _getStatusColor(_invoice.status),
+                color: _statusBadgeForegroundColor(),
                 fontWeight: FontWeight.w500,
                 fontSize: 12,
               ),
@@ -201,10 +217,30 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
   }
 
   Widget _buildSummaryBadges() {
-    final phase1 = _invoice.firstInstallmentUGX;
-    final phase2 = _ensureSecondInstallment();
-    final regProcess = phase2; // phase 2 equals registration process
-    final grandTotal = phase1 + phase2;
+    // Align with line-item total: stored first/second installment columns can drift after edits;
+    // totalAmount is recalculated from items on load.
+    final bool looksLikeCarImport =
+        (_invoice.carPriceUSD > 0 && _invoice.exchangeRate > 0) ||
+            _invoice.firstInstallmentUGX > 0 ||
+            _invoice.taxesURA > 0 ||
+            _invoice.vehicleMake.isNotEmpty;
+
+    late final double regProcess;
+    late final double grandTotal;
+
+    if (looksLikeCarImport) {
+      final ura = _ensureUraTaxes();
+      final extras =
+          _invoice.numberPlatesFee + _invoice.thirdPartyInsurance + _invoice.agencyFees;
+      final phase2 = ura + extras;
+      regProcess = phase2;
+      grandTotal = _invoice.totalAmount > 0 ? _invoice.totalAmount : (_invoice.firstInstallmentUGX + phase2);
+    } else {
+      final phase1 = _invoice.firstInstallmentUGX;
+      final phase2 = _ensureSecondInstallment();
+      regProcess = phase2;
+      grandTotal = phase1 + phase2;
+    }
 
     return Row(
       children: [
@@ -313,21 +349,20 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _invoice.customer!.displayName,
+                        _invoice.customer!.displayName.isNotEmpty ? _invoice.customer!.displayName : 'N/A',
                         style: GoogleFonts.poppins(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
                         ),
                       ),
-                      if (_invoice.customer!.email.isNotEmpty)
-                        Text(
-                          _invoice.customer!.email,
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            color: Colors.white.withOpacity(0.7),
-                          ),
+                      Text(
+                        displayEmailOrNa(_invoice.customer!.email),
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          color: Colors.white.withOpacity(0.7),
                         ),
+                      ),
                     ],
                   ),
                 ),
@@ -338,10 +373,10 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           Row(
             children: [
               Expanded(
-                child: _buildInfoItem('Name', _invoice.customer?.name ?? 'N/A'),
+                child: _buildInfoItem('Name', (_invoice.customer?.name?.isNotEmpty == true) ? _invoice.customer!.name : 'N/A'),
               ),
               Expanded(
-                child: _buildInfoItem('Email', _invoice.customer?.email ?? 'N/A'),
+                child: _buildInfoItem('Email', displayEmailOrNa(_invoice.customer?.email)),
               ),
             ],
           ),
@@ -349,17 +384,15 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           Row(
             children: [
             Expanded(
-                child: _buildInfoItem('Phone', _invoice.customer?.phone ?? 'N/A'),
+                child: _buildInfoItem('Phone', (_invoice.customer?.phone?.isNotEmpty == true) ? _invoice.customer!.phone : 'N/A'),
               ),
               Expanded(
-                child: _buildInfoItem('Company', _invoice.customer?.company ?? 'N/A'),
+                child: _buildInfoItem('Company', (_invoice.customer?.company?.isNotEmpty == true) ? _invoice.customer!.company : 'N/A'),
               ),
             ],
           ),
-          if (_invoice.customer?.address?.isNotEmpty == true) ...[
-            const SizedBox(height: 16),
-            _buildInfoItem('Address', _invoice.customer!.address),
-          ],
+          const SizedBox(height: 16),
+          _buildInfoItem('Address', (_invoice.customer?.address?.isNotEmpty == true) ? _invoice.customer!.address! : 'N/A'),
         ],
       ),
     );
@@ -455,6 +488,28 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
   }
 
   Widget _buildTotals() {
+    // For car import invoices we want a business-meaningful breakdown:
+    // Phase 1 (upfront) + URA Taxes (always) + Phase 2 extras (plates/insurance/agent) = Total.
+    // The generic Subtotal/VAT/Discount model is still used for custom invoices.
+    final bool looksLikeCarImportInvoice =
+        (_invoice.carPriceUSD > 0 && _invoice.exchangeRate > 0) ||
+        _invoice.firstInstallmentUGX > 0 ||
+        _invoice.taxesURA > 0 ||
+        _invoice.vehicleMake.isNotEmpty;
+
+    final double uraTaxes = _ensureUraTaxes();
+    final double phase2Extras = _invoice.numberPlatesFee + _invoice.thirdPartyInsurance + _invoice.agencyFees;
+    final double secondPhaseCombined = uraTaxes + phase2Extras;
+    // Prefer totals derived from totalAmount (line items) so updates reflect saved items.
+    final double phase1Total = looksLikeCarImportInvoice
+        ? ((_invoice.totalAmount - secondPhaseCombined).clamp(0.0, double.infinity))
+        : (_invoice.firstInstallmentUGX > 0
+            ? _invoice.firstInstallmentUGX
+            : (_invoice.totalAmount - uraTaxes - phase2Extras));
+    final double computedTotal = looksLikeCarImportInvoice
+        ? _invoice.totalAmount
+        : (phase1Total + uraTaxes + phase2Extras);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
@@ -477,13 +532,20 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          _buildTotalRow('Subtotal', _invoice.subtotal, false),
-          _buildTotalRow('VAT (${UgandaFormatters.formatVatRate()})', _invoice.taxAmount, false),
-          _buildTotalRow('Discount', -_invoice.discountAmount, false),
+          if (looksLikeCarImportInvoice) ...[
+            _buildTotalRow('Phase 1 (Upfront)', phase1Total, false),
+            _buildTotalRow('URA Taxes', uraTaxes, false),
+            _buildTotalRow('Phase 2 Extras', phase2Extras, false),
+          ] else ...[
+            _buildTotalRow('Subtotal', _invoice.subtotal, false),
+            _buildTotalRow('VAT (${UgandaFormatters.formatVatRate()})', _invoice.taxAmount, false),
+            _buildTotalRow('Discount', -_invoice.discountAmount, false),
+          ],
           const SizedBox(height: 8),
           const Divider(color: Colors.white24),
           const SizedBox(height: 8),
-          _buildTotalRow('Total', _invoice.totalAmount, true),
+          // Use computed total for car-import invoices to avoid stale/incorrect stored totals.
+          _buildTotalRow('Total', looksLikeCarImportInvoice ? computedTotal : _invoice.totalAmount, true),
         ],
       ),
     );
@@ -529,7 +591,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     final vat = (cv + importDuty) * 0.18;
     final wht = cv * 0.06;
     final infra = cv * 0.015;
-    final envLevy = year <= 2015 ? cv * 0.50 : 0.0;
+    final envLevy = _isEnvironmentalLevyApplicable(year) ? cv * 0.50 : 0.0;
     const regFee = 1500000.0;
     const stamp = 18000.0;
     const regForm = 35000.0;
@@ -567,7 +629,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           _buildBreakdownRow('Registration Form', regForm),
           const SizedBox(height: 6),
           _buildLabelText('Vehicle Category', _invoice.engineSize.isNotEmpty ? 'Car' : 'Car'),
-          _buildLabelText('Sheet Used', 'without surcharge'),
+          _buildLabelText('Sheet Used', _getSheetUsed(envLevy)),
         ],
       ),
     );
@@ -639,6 +701,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
   }
 
   Widget _buildQuickActions(BuildContext context) {
+    final fin = _invoice.isFinalized;
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
@@ -660,15 +723,37 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
               color: Colors.white,
             ),
           ),
+          if (fin) ...[
+            const SizedBox(height: 8),
+            Text(
+              'This invoice is finalized (shared or printed). Editing is disabled.',
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                color: Colors.white70,
+              ),
+            ),
+          ],
           const SizedBox(height: 20),
           Row(
             children: [
+              if (!fin) ...[
+                Expanded(
+                  child: _buildActionButton(
+                    'Edit',
+                    FontAwesomeIcons.pencil,
+                    Colors.teal,
+                    () => _openInvoiceForEdit(context),
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
               Expanded(
                 child: _buildActionButton(
                   'Generate PDF',
                   FontAwesomeIcons.filePdf,
                   Colors.red,
                   () => _generatePDF(context, _invoice),
+                  isLoading: _isGeneratingPDF,
                 ),
               ),
               const SizedBox(width: 12),
@@ -679,22 +764,6 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                   Colors.blue,
                   () => _sendEmailInvoice(context, _invoice),
                 ),
-              ),
-              const SizedBox(width: 12),
-              FutureBuilder<bool>(
-                future: AuthService().isCurrentUserAdmin(),
-                builder: (context, snap) {
-                  final canDelete = snap.data ?? false;
-                  if (!canDelete) return const SizedBox.shrink();
-                  return Expanded(
-                    child: _buildActionButton(
-                      'Delete',
-                      FontAwesomeIcons.trash,
-                      Colors.orange,
-                      () => _confirmDelete(context, _invoice),
-                    ),
-                  );
-                },
               ),
             ],
           ),
@@ -724,6 +793,38 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         ],
       ),
     );
+  }
+
+  void _openInvoiceForEdit(BuildContext context) {
+    if (_invoice.isFinalized) return;
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (context) => InvoiceFormScreen(
+          customer: _invoice.customer,
+          invoice: _invoice,
+          type: _invoice.invoiceType,
+        ),
+      ),
+    ).then((_) {
+      if (mounted) _loadInvoiceWithCustomer();
+    });
+  }
+
+  Future<void> _markInvoiceFinalizedIfNeeded() async {
+    if (_invoice.isFinalized || _invoice.id == null) return;
+    try {
+      await InvoiceService().setInvoiceFinalized(_invoice.id!);
+      if (!mounted) return;
+      setState(() {
+        _invoice = _invoice.copyWith(isFinalized: true, status: InvoiceStatus.sent);
+      });
+      try {
+        Provider.of<InvoiceProvider>(context, listen: false).loadInvoices();
+      } catch (_) {}
+    } catch (e) {
+      debugPrint('Failed to persist finalized state: $e');
+    }
   }
 
   Widget _buildActionButton(String title, IconData icon, Color color, VoidCallback onTap, {bool isLoading = false}) {
@@ -775,50 +876,19 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     );
   }
 
-  void _confirmDelete(BuildContext context, Invoice invoice) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Delete Invoice', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-        content: Text('Are you sure you want to delete invoice #${invoice.invoiceNumber}?', style: GoogleFonts.poppins()),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text('Cancel', style: GoogleFonts.poppins()),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text('Delete', style: GoogleFonts.poppins(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
+  String _statusBadgeLabel() {
+    if (_invoice.isFinalized) return 'FINAL';
+    return _invoice.status.name.toUpperCase();
+  }
 
-    if (confirm != true) return;
+  Color _statusBadgeBackgroundColor() {
+    if (_invoice.isFinalized) return Colors.teal;
+    return _getStatusColor(_invoice.status);
+  }
 
-    try {
-      final provider = Provider.of<InvoiceProvider>(context, listen: false);
-      final id = invoice.id;
-      if (id != null) {
-        final ok = await provider.deleteInvoice(id);
-        if (ok && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Invoice deleted', style: GoogleFonts.poppins()), backgroundColor: Colors.green),
-          );
-          Navigator.pop(context);
-        } else if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to delete invoice', style: GoogleFonts.poppins()), backgroundColor: Colors.red),
-          );
-        }
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e', style: GoogleFonts.poppins()), backgroundColor: Colors.red),
-        );
-      }
-    }
+  Color _statusBadgeForegroundColor() {
+    if (_invoice.isFinalized) return Colors.tealAccent;
+    return _getStatusColor(_invoice.status);
   }
 
   Color _getStatusColor(InvoiceStatus status) {
@@ -842,7 +912,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     return '${date.day}/${date.month}/${date.year}';
   }
 
-  void _sendWhatsAppInvoice(BuildContext context, Invoice invoice) async {
+  Future<void> _sendWhatsAppInvoice(BuildContext context, Invoice invoice) async {
     // Prevent multiple simultaneous sends
     if (_isSendingWhatsApp) {
       return;
@@ -946,6 +1016,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           ),
         );
       }
+      if (success) await _markInvoiceFinalizedIfNeeded();
     } catch (e) {
       // Close processing dialog if still open
       if (context.mounted) {
@@ -975,30 +1046,33 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     }
   }
 
-  void _generatePDF(BuildContext context, Invoice invoice) async {
+  Future<void> _generatePDF(BuildContext context, Invoice invoice) async {
+    if (_isGeneratingPDF) return;
+    setState(() => _isGeneratingPDF = true);
     try {
       final pdfService = PDFService();
-      
-      // Show loading indicator
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Generating PDF...'),
-          backgroundColor: Colors.blue,
-        ),
-      );
-      
-      // Generate and save PDF
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Generating PDF...'),
+            backgroundColor: Colors.blue,
+          ),
+        );
+      }
+
       final filePath = await pdfService.savePDFToFile(invoice);
-      
+
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('PDF saved to: $filePath'),
             backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
+            duration: const Duration(seconds: 3),
           ),
         );
       }
+      await _markInvoiceFinalizedIfNeeded();
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1008,10 +1082,12 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isGeneratingPDF = false);
     }
   }
 
-  void _printPDF(BuildContext context, Invoice invoice) async {
+  Future<void> _printPDF(BuildContext context, Invoice invoice) async {
     try {
       final pdfService = PDFService();
       
@@ -1025,7 +1101,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
       
       // Print PDF
       await pdfService.printPDF(invoice);
-      
+      await _markInvoiceFinalizedIfNeeded();
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1038,9 +1114,9 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     }
   }
 
-  void _sendEmailInvoice(BuildContext context, Invoice invoice) async {
+  Future<void> _sendEmailInvoice(BuildContext context, Invoice invoice) async {
     try {
-      if (invoice.customer?.email == null || invoice.customer!.email.isEmpty) {
+      if (!isRealCustomerEmail(invoice.customer?.email)) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -1096,6 +1172,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           ),
         );
       }
+      if (success) await _markInvoiceFinalizedIfNeeded();
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1276,6 +1353,101 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     );
   }
 
+  Widget _buildModelWithSuffixField() {
+    final inputDecoration = InputDecoration(
+      hintText: 'Model',
+      hintStyle: GoogleFonts.poppins(fontSize: 12, color: Colors.white38),
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Colors.white54),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Model',
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              color: Colors.white.withOpacity(0.6),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  controller: _modelController,
+                  style: GoogleFonts.poppins(fontSize: 14, color: Colors.white, fontWeight: FontWeight.w500),
+                  decoration: inputDecoration.copyWith(hintText: 'e.g. 120i'),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Text(
+                  ' / ',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    color: Colors.white.withOpacity(0.7),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: TextField(
+                  controller: _modelSuffixController,
+                  style: GoogleFonts.poppins(fontSize: 14, color: Colors.white, fontWeight: FontWeight.w500),
+                  decoration: inputDecoration.copyWith(hintText: 'Optional'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.save_outlined, color: Colors.white70, size: 20),
+                onPressed: _invoice.id == null
+                    ? null
+                    : () async {
+                        final model = _modelController.text.trim();
+                        final suffix = _modelSuffixController.text.trim();
+                        final updated = _invoice.copyWith(
+                          vehicleModel: model,
+                          vehicleModelSuffix: suffix,
+                        );
+                        final provider = context.read<InvoiceProvider>();
+                        final ok = await provider.updateInvoice(updated);
+                        if (mounted && ok) {
+                          await _loadInvoiceWithCustomer();
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Model saved', style: GoogleFonts.poppins()),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          }
+                        }
+                      },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildVehicleSummary() {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1301,29 +1473,29 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(child: _buildInfoItem('Make', _invoice.vehicleMake.isNotEmpty ? _invoice.vehicleMake : '—')),
-              Expanded(child: _buildInfoItem('Model', _invoice.vehicleModel.isNotEmpty ? _invoice.vehicleModel : '—')),
+              Expanded(child: _buildInfoItem('Make', _invoice.vehicleMake.isNotEmpty ? _invoice.vehicleMake : 'N/A')),
+              Expanded(child: _buildModelWithSuffixField()),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: _buildInfoItem('Year', _invoice.vehicleYear > 0 ? _invoice.vehicleYear.toString() : '—')),
-              Expanded(child: _buildInfoItem('Chassis No.', _invoice.chassisNo.isNotEmpty ? _invoice.chassisNo : '—')),
+              Expanded(child: _buildInfoItem('Year', _invoice.vehicleYear > 0 ? _invoice.vehicleYear.toString() : 'N/A')),
+              Expanded(child: _buildInfoItem('Chassis No.', _invoice.chassisNo.isNotEmpty ? _invoice.chassisNo : 'N/A')),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: _buildInfoItem('Engine Size', _invoice.engineSize.isNotEmpty ? _invoice.engineSize : '—')),
-              Expanded(child: _buildInfoItem('Fuel', _invoice.fuelType.isNotEmpty ? _invoice.fuelType : '—')),
+              Expanded(child: _buildInfoItem('Engine Size', _invoice.engineSize.isNotEmpty ? _invoice.engineSize : 'N/A')),
+              Expanded(child: _buildInfoItem('Fuel', _invoice.fuelType.isNotEmpty ? _invoice.fuelType : 'N/A')),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: _buildInfoItem('Transmission', _invoice.transmission.isNotEmpty ? _invoice.transmission : '—')),
-              Expanded(child: _buildInfoItem('Color', _invoice.color.isNotEmpty ? _invoice.color : '—')),
+              Expanded(child: _buildInfoItem('Transmission', _invoice.transmission.isNotEmpty ? _invoice.transmission : 'N/A')),
+              Expanded(child: _buildInfoItem('Color', _invoice.color.isNotEmpty ? _invoice.color : 'N/A')),
             ],
           ),
         ],
@@ -1775,7 +1947,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     final vat = (cv + importDuty) * 0.18;
     final wht = cv * 0.06;
     final infra = cv * 0.015;
-    final envLevy = (_invoice.vehicleYear <= 2015) ? cv * 0.50 : 0.0;
+    final envLevy = _isEnvironmentalLevyApplicable(_invoice.vehicleYear) ? cv * 0.50 : 0.0;
     const regFee = 1500000.0;
     const stamp = 18000.0;
     const regForm = 35000.0;
@@ -1785,6 +1957,36 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
   double _ensureSecondInstallment() {
     if (_invoice.secondInstallmentUGX > 0) return _invoice.secondInstallmentUGX;
     return _ensureUraTaxes() + _invoice.numberPlatesFee + _invoice.thirdPartyInsurance + _invoice.agencyFees;
+  }
+
+  int _environmentalCutoffYear() {
+    return _invoice.invoiceDate.year - 10;
+  }
+
+  bool _isEnvironmentalLevyApplicable(int vehicleYear) {
+    if (vehicleYear <= 0) return false;
+    return vehicleYear <= _environmentalCutoffYear();
+  }
+
+  String _getSheetUsed(double envLevy) {
+    // First, try to parse "Sheet Used" from notes
+    final notes = _invoice.notes;
+    if (notes.isNotEmpty) {
+      final lines = notes.split('\n');
+      for (final line in lines) {
+        final trimmed = line.trim();
+        if (trimmed.toLowerCase().startsWith('sheet used:')) {
+          final sheetUsed = trimmed.substring(11).trim();
+          if (sheetUsed.isNotEmpty) {
+            return sheetUsed;
+          }
+        }
+      }
+    }
+    
+    // If not found in notes, determine based on environmental levy
+    // If environmental levy > 0, it's "with surcharge", otherwise "without surcharge"
+    return envLevy > 0 ? 'with surcharge' : 'without surcharge';
   }
 
 }

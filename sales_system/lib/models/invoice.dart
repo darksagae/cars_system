@@ -124,6 +124,8 @@ class Invoice {
   final String stockNo;
   final String vehicleMake;
   final String vehicleModel;
+  /// Optional suffix after a slash (e.g. "Premium"); only shown when user edits this field.
+  final String vehicleModelSuffix;
   final int vehicleYear;
   final String chassisNo;
   final String engineSize;
@@ -160,6 +162,8 @@ class Invoice {
   final String notes;
   final String terms;
   final List<String> images;
+  /// Set true after PDF/email/WhatsApp/print from Invoice Details (record integrity).
+  final bool isFinalized;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -179,6 +183,7 @@ class Invoice {
     this.stockNo = '',
     this.vehicleMake = '',
     this.vehicleModel = '',
+    this.vehicleModelSuffix = '',
     this.vehicleYear = 0,
     this.chassisNo = '',
     this.engineSize = '',
@@ -215,6 +220,7 @@ class Invoice {
     this.notes = '',
     this.terms = '',
     this.images = const [],
+    this.isFinalized = false,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : createdAt = createdAt ?? DateTime.now(),
@@ -226,7 +232,15 @@ class Invoice {
     double calculatedTaxAmount = 0.0;
     double calculatedDiscountAmount = 0.0;
 
-    for (var item in items) {
+    // CIF is stored as a line item for reference, but it must NOT be included
+    // in financial totals (it's only an input for URA tax calculations).
+    bool isReferenceItem(InvoiceItem item) {
+      final name = item.productName.trim().toLowerCase();
+      final desc = item.description.trim().toLowerCase();
+      return name.startsWith('cif') && desc.contains('reference');
+    }
+
+    for (var item in items.where((i) => !isReferenceItem(i))) {
       calculatedSubtotal += item.subtotal;
       calculatedDiscountAmount += item.discountAmount;
       calculatedTaxAmount += item.taxAmount;
@@ -242,6 +256,13 @@ class Invoice {
       totalAmount: calculatedTotal,
       balanceAmount: calculatedBalance,
     );
+  }
+
+  /// Model display: base model + " / suffix" only when suffix was edited (non-empty). Never N/A for empty suffix.
+  String get displayModel {
+    if (vehicleModel.trim().isEmpty) return 'N/A';
+    final suffix = vehicleModelSuffix.trim();
+    return suffix.isEmpty ? vehicleModel : '$vehicleModel / $suffix';
   }
 
   // Check if invoice is overdue
@@ -310,6 +331,7 @@ class Invoice {
       'stockNo': stockNo,
       'vehicleMake': vehicleMake,
       'vehicleModel': vehicleModel,
+      'vehicleModelSuffix': vehicleModelSuffix,
       'vehicleYear': vehicleYear,
       'chassisNo': chassisNo,
       'engineSize': engineSize,
@@ -344,6 +366,7 @@ class Invoice {
       'notes': notes,
       'terms': terms,
       'images': images.join(','),
+      'isFinalized': isFinalized ? 1 : 0,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
@@ -375,6 +398,7 @@ class Invoice {
       stockNo: map['stockNo'] as String? ?? '',
       vehicleMake: map['vehicleMake'] as String? ?? '',
       vehicleModel: map['vehicleModel'] as String? ?? '',
+      vehicleModelSuffix: map['vehicleModelSuffix'] as String? ?? '',
       vehicleYear: (map['vehicleYear'] as int?) ?? 0,
       chassisNo: map['chassisNo'] as String? ?? '',
       engineSize: map['engineSize'] as String? ?? '',
@@ -406,11 +430,13 @@ class Invoice {
       carAmount: (map['carAmount'] as num?)?.toDouble() ?? 0.0,
       downPayment: (map['downPayment'] as num?)?.toDouble() ?? 0.0,
       remainingAmount: (map['remainingAmount'] as num?)?.toDouble() ?? 0.0,
+      taxRate: (map['taxRate'] as num?)?.toDouble() ?? 0.0,
       notes: map['notes'] as String? ?? '',
       terms: map['terms'] as String? ?? '',
       images: (map['images'] as String?)?.isNotEmpty == true 
           ? (map['images'] as String).split(',') 
           : [],
+      isFinalized: (map['isFinalized'] as int?) == 1,
       createdAt: DateTime.parse(map['createdAt'] as String),
       updatedAt: DateTime.parse(map['updatedAt'] as String),
     );
@@ -431,6 +457,7 @@ class Invoice {
     String? stockNo,
     String? vehicleMake,
     String? vehicleModel,
+    String? vehicleModelSuffix,
     int? vehicleYear,
     String? chassisNo,
     String? engineSize,
@@ -461,6 +488,7 @@ class Invoice {
     String? notes,
     String? terms,
     List<String>? images,
+    bool? isFinalized,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -478,6 +506,7 @@ class Invoice {
       stockNo: stockNo ?? this.stockNo,
       vehicleMake: vehicleMake ?? this.vehicleMake,
       vehicleModel: vehicleModel ?? this.vehicleModel,
+      vehicleModelSuffix: vehicleModelSuffix ?? this.vehicleModelSuffix,
       vehicleYear: vehicleYear ?? this.vehicleYear,
       chassisNo: chassisNo ?? this.chassisNo,
       engineSize: engineSize ?? this.engineSize,
@@ -508,6 +537,7 @@ class Invoice {
       notes: notes ?? this.notes,
       terms: terms ?? this.terms,
       images: images ?? this.images,
+      isFinalized: isFinalized ?? this.isFinalized,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

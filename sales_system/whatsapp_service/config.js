@@ -1,10 +1,15 @@
-// Supabase Configuration
-// Set these as environment variables or update with your values
+// Neon Postgres Database Configuration
 
 module.exports = {
-  supabase: {
-    url: process.env.SUPABASE_URL || 'https://xjnrdzzwratspwmwridu.supabase.co',
-    anonKey: process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhqbnJkenp3cmF0c3B3bXdyaWR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAzMTAwODksImV4cCI6MjA3NTg4NjA4OX0.06HmZgrd555DSRIPxZlTcGoOPjGa6ADgVtnWY5OtCsw',
+  postgres: {
+    host: process.env.PGHOST || 'ep-bitter-fire-a81vc85m.eastus2.azure.neon.tech',
+    database: process.env.PGDATABASE || 'neondb',
+    user: process.env.PGUSER || 'neondb_owner',
+    password: process.env.PGPASSWORD || '',
+    port: parseInt(process.env.PGPORT || '5432'),
+    ssl: {
+      rejectUnauthorized: false
+    }
   },
   
   // Auto-reply message
@@ -14,8 +19,3 @@ module.exports = {
   // Company info
   companyName: process.env.COMPANY_NAME || 'NSB Motors Ug',
 };
-
-
-
-
-

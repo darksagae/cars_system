@@ -1,13 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:flutter_pdfview/flutter_pdfview.dart';
-import 'dart:io';
 import '../providers/app_provider.dart';
 import 'scan_client_screen.dart';
 import 'client_users_screen.dart';
 import '../services/supabase_service.dart';
-import '../services/local_database_service.dart';
 
 class ClientsScreen extends StatefulWidget {
   const ClientsScreen({Key? key}) : super(key: key);
@@ -17,145 +15,53 @@ class ClientsScreen extends StatefulWidget {
 }
 
 class _ClientsScreenState extends State<ClientsScreen> {
-  Duration _timeFilter = const Duration(hours: 24); // Default: last 24 hours
-  String _selectedFilter = '24h'; // 24h, 7d, 30d, all
+  Timer? _refreshTimer;
 
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              '$label:',
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.white70,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  static const _primary = Color(0xFF1D4ED8);
+  static const _textPrimary = Color(0xFF0F172A);
+  static const _textSecondary = Color(0xFF64748B);
+  static const _bgColor = Color(0xFFF8FAFC);
 
   @override
   void initState() {
-
     super.initState();
-    // Auto-refresh every 3 seconds for real-time updates
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _startAutoRefresh();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted) context.read<AppProvider>().refreshDesktopClients();
     });
   }
 
-  void _startAutoRefresh() {
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) {
-        // Force rebuild by calling refresh
-        context.read<AppProvider>().refreshDesktopClients().then((_) {
-          // Schedule next refresh
-          _startAutoRefresh();
-        }).catchError((e) {
-          print('❌ Error in auto-refresh: $e');
-          // Continue refreshing even on error
-          _startAutoRefresh();
-        });
-      }
-    });
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: _bgColor,
       appBar: AppBar(
-        title: LayoutBuilder(
-          builder: (context, constraints) {
-            return FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Desktop Clients',
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            );
-          },
-        ),
-        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
-        elevation: 0,
+        title: const Text('Desktop Clients'),
         actions: [
           IconButton(
-            onPressed: () {
-              context.read<AppProvider>().refresh();
-            },
-            icon: const Icon(Icons.refresh, color: Colors.white),
+            onPressed: () => context.read<AppProvider>().refresh(),
+            icon: const Icon(Icons.refresh_rounded),
           ),
           PopupMenuButton<String>(
-            color: const Color(0xFF1A1F3A),
-            icon: const Icon(Icons.more_vert, color: Colors.white),
+            icon: const Icon(Icons.more_vert),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             onSelected: (value) async {
-              if (value == 'clear_all') {
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    backgroundColor: const Color(0xFF1A1F3A),
-                    title: Text('Start Fresh?', style: GoogleFonts.poppins(color: Colors.white)),
-                    content: Text(
-                      'This will permanently remove ALL desktop clients from Supabase.',
-                      style: GoogleFonts.poppins(color: Colors.white70),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.white70)),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: Text('Remove All', style: GoogleFonts.poppins(color: const Color(0xFFE53E3E))),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirmed == true) {
-                  final removed = await SupabaseService.deleteAllDesktopClients();
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Removed $removed clients from Supabase', style: GoogleFonts.poppins()),
-                      backgroundColor: const Color(0xFF2D3748),
-                    ),
-                  );
-                  await context.read<AppProvider>().refresh();
-                }
-              }
+              if (value == 'clear_all') await _clearAllClients();
             },
             itemBuilder: (context) => [
               PopupMenuItem(
                 value: 'clear_all',
                 child: Row(
                   children: [
-                    const Icon(Icons.delete_forever, color: Colors.white70, size: 18),
-                    const SizedBox(width: 8),
-                    Text('Clear All Clients', style: GoogleFonts.poppins(color: Colors.white)),
+                    const Icon(Icons.delete_forever, color: Color(0xFFDC2626), size: 18),
+                    const SizedBox(width: 10),
+                    Text('Clear All Clients',
+                        style: GoogleFonts.plusJakartaSans(color: _textPrimary, fontSize: 14)),
                   ],
                 ),
               ),
@@ -166,11 +72,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
       body: Consumer<AppProvider>(
         builder: (context, appProvider, child) {
           if (appProvider.isLoading && appProvider.desktopClients.isEmpty) {
-            return Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
-              ),
-            );
+            return const Center(child: CircularProgressIndicator());
           }
 
           if (appProvider.desktopClients.isEmpty) {
@@ -180,12 +82,10 @@ class _ClientsScreenState extends State<ClientsScreen> {
           return RefreshIndicator(
             onRefresh: () => appProvider.refresh(),
             child: ListView.builder(
-              key: ValueKey('clients_list_${appProvider.desktopClients.length}'),
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
               itemCount: appProvider.desktopClients.length,
               itemBuilder: (context, index) {
-                final client = appProvider.desktopClients[index];
-                return _buildClientCard(context, client, appProvider);
+                return _buildClientCard(context, appProvider.desktopClients[index], appProvider);
               },
             ),
           );
@@ -200,305 +100,236 @@ class _ClientsScreenState extends State<ClientsScreen> {
             context.read<AppProvider>().refresh();
           }
         },
-        backgroundColor: const Color(0xFF667EEA),
-        icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
-        label: const Text('Add Desktop Client', style: TextStyle(color: Colors.white)),
+        backgroundColor: _primary,
+        icon: const Icon(Icons.qr_code_scanner_rounded, color: Colors.white),
+        label: Text(
+          'Add Client',
+          style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600),
+        ),
       ),
     );
   }
 
-  Widget _buildEmptyState(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.computer_outlined,
-            size: 80,
-            color: Colors.white.withOpacity(0.3),
+  Future<void> _clearAllClients() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear All Clients?'),
+        content: Text(
+          'This will permanently remove all desktop clients.',
+          style: GoogleFonts.plusJakartaSans(color: _textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
           ),
-          const SizedBox(height: 16),
-          Text(
-            'No Desktop Clients',
-            style: GoogleFonts.poppins(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.white70,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Desktop clients will appear here once they connect',
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              color: Colors.white54,
-            ),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () {
-              _showAddClientDialog(context);
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('Add Client'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF667EEA),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Remove All',
+                style: GoogleFonts.plusJakartaSans(color: const Color(0xFFDC2626))),
           ),
         ],
       ),
     );
+    if (confirmed == true && mounted) {
+      final removed = await SupabaseService.deleteAllDesktopClients();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Removed $removed clients'),
+          backgroundColor: const Color(0xFF1F2937),
+        ),
+      );
+      await context.read<AppProvider>().refresh();
+    }
   }
 
-  Widget _buildClientCard(BuildContext context, Map<String, dynamic> client, AppProvider appProvider) {
-    final status = client['status'] ?? 'unknown';
-    final lastSeen = client['last_seen'] ?? '';
-    final platform = client['platform'] ?? 'Unknown';
-    final ipAddress = client['ip_address'] ?? 'Unknown';
-    
-    // Use last_seen as key to force rebuild when it changes
-    final cardKey = ValueKey('client_${client['client_id']}_${lastSeen}');
+  Widget _buildEmptyState(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(Icons.computer_outlined, size: 40, color: Color(0xFF3B82F6)),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'No Desktop Clients',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: _textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Clients will appear here once they connect to the system.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(fontSize: 14, color: _textSecondary),
+            ),
+            const SizedBox(height: 28),
+            ElevatedButton.icon(
+              onPressed: () => _showAddClientDialog(context),
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('Add Client'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-    // Determine online/offline based on last_seen recency to handle offline state gracefully
+  Widget _buildClientCard(
+    BuildContext context,
+    Map<String, dynamic> client,
+    AppProvider appProvider,
+  ) {
+    final lastSeen = client['last_seen'] ?? '';
     bool isOnline = false;
     try {
       if (lastSeen is String && lastSeen.isNotEmpty) {
         final dt = DateTime.parse(lastSeen);
-        final diff = DateTime.now().toUtc().difference(dt.toUtc()).inSeconds;
-        // Consider online if we saw activity in the last 60 seconds
-        isOnline = diff <= 60;
+        isOnline = DateTime.now().toUtc().difference(dt.toUtc()).inSeconds <= 60;
       }
     } catch (_) {}
 
-    // Determine ONLINE strictly from last_seen freshness to reflect connectivity accurately
-    final online = isOnline;
+    final statusColor = isOnline ? const Color(0xFF059669) : const Color(0xFFDC2626);
+    final statusBg = isOnline ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2);
 
-    Color statusColor = online ? Colors.green : Colors.red;
-    IconData statusIcon = online ? Icons.check_circle : Icons.wifi_off;
-
-    return Container(
-      key: cardKey,
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
-      ),
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
+          // Header row
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: statusBg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.computer_rounded, color: statusColor, size: 24),
                 ),
-                child: Icon(
-                  Icons.computer,
-                  color: statusColor,
-                  size: 24,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        client['client_name'] ?? 'Unknown Client',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: _textPrimary,
+                        ),
+                      ),
+                      Text(
+                        client['client_id'] ?? '',
+                        style: GoogleFonts.plusJakartaSans(fontSize: 12, color: _textSecondary),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: statusBg,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: statusColor.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: statusColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        isOnline ? 'ONLINE' : 'OFFLINE',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: statusColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Info chips
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                _buildInfoChip(Icons.devices_rounded, client['platform'] ?? 'Unknown'),
+                _buildInfoChip(Icons.location_on_outlined, client['ip_address'] ?? 'Unknown'),
+                _buildInfoChip(Icons.schedule_rounded, _formatLastSeen(lastSeen)),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+
+          // Action buttons
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            child: Column(
+              children: [
+                Row(
                   children: [
-                    Text(
-                      client['client_name'] ?? 'Unknown Client',
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    Text(
-                      client['client_id'] ?? 'Unknown ID',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: Colors.white70,
-                      ),
-                    ),
+                    Expanded(child: _iconBtn(Icons.info_outline_rounded, 'Details', _primary, const Color(0xFFEFF6FF), () => _showClientDetails(context, client))),
+                    const SizedBox(width: 8),
+                    Expanded(child: _iconBtn(Icons.admin_panel_settings_outlined, 'Users', const Color(0xFF0891B2), const Color(0xFFE0F2FE), () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ClientUsersScreen(clientId: (client['client_id'] ?? '').toString(), clientName: (client['client_name'] ?? 'Client').toString()))))),
+                    const SizedBox(width: 8),
+                    Expanded(child: _iconBtn(Icons.settings_remote_rounded, 'Control', const Color(0xFF7C3AED), const Color(0xFFF5F3FF), () => _showRemoteActions(context, client, appProvider))),
+                    const SizedBox(width: 8),
+                    Expanded(child: _iconBtn(Icons.delete_outline_rounded, 'Delete', const Color(0xFFDC2626), const Color(0xFFFEF2F2), () => _deleteClient(context, client))),
                   ],
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: statusColor.withOpacity(0.3)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(statusIcon, color: statusColor, size: 16),
-                    const SizedBox(width: 4),
-                    Text(
-                      (online ? 'ONLINE' : 'OFFLINE'),
-                      style: GoogleFonts.poppins(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: statusColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _buildInfoChip(Icons.devices, platform),
-              const SizedBox(width: 8),
-              _buildInfoChip(Icons.location_on, ipAddress),
-              const SizedBox(width: 8),
-              _buildInfoChip(Icons.schedule, _formatLastSeen(lastSeen)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // First row of buttons
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    _showClientDetails(context, client);
-                  },
-                  icon: const Icon(Icons.info, size: 16),
-                  label: const Text('Details'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showClientActivities(context, client),
+                    icon: const Icon(Icons.history_rounded, size: 16),
+                    label: const Text('View Recent Activities'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFD97706),
+                      side: const BorderSide(color: Color(0xFFFBBF24)),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      textStyle: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => ClientUsersScreen(
-                          clientId: (client['client_id'] ?? '').toString(),
-                          clientName: (client['client_name'] ?? 'Client').toString(),
-                        ),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.admin_panel_settings, size: 16),
-                  label: const Text('Users'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.teal,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    _showRemoteActions(context, client, appProvider);
-                  },
-                  icon: const Icon(Icons.settings_remote, size: 16),
-                  label: const Text('Control'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Theme.of(context).colorScheme.primary,
-                    side: BorderSide(color: Theme.of(context).colorScheme.primary),
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                height: 36,
-                width: 36,
-                child: IconButton(
-                  tooltip: 'Delete client',
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.red.withOpacity(0.1),
-                  ),
-                  onPressed: () async {
-                    final confirmed = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        backgroundColor: const Color(0xFF1A1F3A),
-                        title: Text('Delete this client?', style: GoogleFonts.poppins(color: Colors.white)),
-                        content: Text(
-                          'Client: ${client['client_name'] ?? client['client_id']}\nThis cannot be undone.',
-                          style: GoogleFonts.poppins(color: Colors.white70),
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.white70)),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            child: Text('Delete', style: GoogleFonts.poppins(color: const Color(0xFFE53E3E))),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (confirmed == true) {
-                      final ok = await SupabaseService.deleteDesktopClient(client['client_id']);
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(ok ? 'Client deleted' : 'Failed to delete', style: GoogleFonts.poppins()),
-                          backgroundColor: ok ? const Color(0xFF2D3748) : Colors.red,
-                        ),
-                      );
-                      await context.read<AppProvider>().refresh();
-                    }
-                  },
-                  icon: const Icon(Icons.delete, color: Colors.red, size: 18),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          // Second row: Activities button
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    _showClientActivities(context, client);
-                  },
-                  icon: const Icon(Icons.history, size: 18),
-                  label: const Text('View Recent Activities'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.amber,
-                    side: const BorderSide(color: Colors.amber, width: 1.5),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -507,47 +338,128 @@ class _ClientsScreenState extends State<ClientsScreen> {
 
   Widget _buildInfoChip(IconData icon, String text) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFF0A0E21),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: Colors.white70, size: 14),
-          const SizedBox(width: 4),
+          Icon(icon, size: 13, color: _textSecondary),
+          const SizedBox(width: 5),
           Text(
             text,
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              color: Colors.white70,
-            ),
+            style: GoogleFonts.plusJakartaSans(fontSize: 12, color: _textSecondary),
           ),
         ],
       ),
     );
   }
 
+  Widget _buildActionButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+    bool outlined = false,
+  }) {
+    if (outlined) {
+      return OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: color,
+          side: BorderSide(color: color.withOpacity(0.6)),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          textStyle: GoogleFonts.plusJakartaSans(fontSize: 12, fontWeight: FontWeight.w600),
+          minimumSize: const Size(0, 36),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15),
+            const SizedBox(width: 4),
+            Text(label),
+          ],
+        ),
+      );
+    }
+    return ElevatedButton(
+      onPressed: onTap,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: color,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        textStyle: GoogleFonts.plusJakartaSans(fontSize: 12, fontWeight: FontWeight.w600),
+        minimumSize: const Size(0, 36),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15),
+          const SizedBox(width: 4),
+          Text(label),
+        ],
+      ),
+    );
+  }
+
+  Widget _iconBtn(IconData icon, String label, Color color, Color bg, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(height: 3),
+            Text(label, style: GoogleFonts.plusJakartaSans(fontSize: 10, fontWeight: FontWeight.w600, color: color)),
+          ],
+        ),
+      ),
+    );
+  }
+
   String _formatLastSeen(String lastSeen) {
     if (lastSeen.isEmpty) return 'Never';
-    
     try {
       final dateTime = DateTime.parse(lastSeen);
-      final now = DateTime.now();
-      final difference = now.difference(dateTime);
-      
-      // Always recalculate to show current time (updates every rebuild)
-      if (difference.inSeconds < 60) {
-        return '${difference.inSeconds}s ago';
-      } else if (difference.inMinutes < 60) {
-        return '${difference.inMinutes}m ago';
-      } else if (difference.inHours < 24) {
-        return '${difference.inHours}h ago';
-      } else {
-        return '${difference.inDays}d ago';
-      }
+      final difference = DateTime.now().difference(dateTime);
+      if (difference.inSeconds < 60) return '${difference.inSeconds}s ago';
+      if (difference.inMinutes < 60) return '${difference.inMinutes}m ago';
+      if (difference.inHours < 24) return '${difference.inHours}h ago';
+      return '${difference.inDays}d ago';
+    } catch (e) {
+      return 'Unknown';
+    }
+  }
+
+  String _formatTimeAgo(String dateStr) {
+    if (dateStr.isEmpty) return 'Unknown';
+    try {
+      final dateTime = DateTime.parse(dateStr);
+      final difference = DateTime.now().difference(dateTime);
+      if (difference.inMinutes < 1) return 'Just now';
+      if (difference.inMinutes < 60) return '${difference.inMinutes}m ago';
+      if (difference.inHours < 24) return '${difference.inHours}h ago';
+      return '${difference.inDays}d ago';
+    } catch (e) {
+      return 'Unknown';
+    }
+  }
+
+  String _formatDate(String dateStr) {
+    if (dateStr.isEmpty) return 'Unknown';
+    try {
+      final dateTime = DateTime.parse(dateStr);
+      return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
     } catch (e) {
       return 'Unknown';
     }
@@ -557,22 +469,15 @@ class _ClientsScreenState extends State<ClientsScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1F3A),
-        title: Text(
-          'Add Desktop Client',
-          style: GoogleFonts.poppins(color: Colors.white),
-        ),
+        title: const Text('Add Desktop Client'),
         content: Text(
-          'Desktop clients will automatically register when they start up and connect to the system.',
-          style: GoogleFonts.poppins(color: Colors.white70),
+          'Desktop clients automatically register when they start up and connect to the system.',
+          style: GoogleFonts.plusJakartaSans(color: _textSecondary),
         ),
         actions: [
-          TextButton(
+          ElevatedButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(
-              'OK',
-              style: GoogleFonts.poppins(color: const Color(0xFF667EEA)),
-            ),
+            child: const Text('Got it'),
           ),
         ],
       ),
@@ -583,991 +488,35 @@ class _ClientsScreenState extends State<ClientsScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1F3A),
-        title: Text(
-          'Client Details',
-          style: GoogleFonts.poppins(color: Colors.white),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildDetailRow('Name', client['client_name'] ?? 'Unknown'),
-            _buildDetailRow('ID', client['client_id'] ?? 'Unknown'),
-            _buildDetailRow('Platform', client['platform'] ?? 'Unknown'),
-            _buildDetailRow('Version', client['version'] ?? 'Unknown'),
-            _buildDetailRow('IP Address', client['ip_address'] ?? 'Unknown'),
-            _buildDetailRow('Status', client['status'] ?? 'Unknown'),
-            _buildDetailRow('Last Seen', _formatLastSeen(client['last_seen'] ?? '')),
-            _buildDetailRow('Created', _formatDate(client['created_at'] ?? '')),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Close',
-              style: GoogleFonts.poppins(color: const Color(0xFF667EEA)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatDate(String dateStr) {
-    if (dateStr.isEmpty) return 'Unknown';
-    
-    try {
-      final dateTime = DateTime.parse(dateStr);
-      return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
-    } catch (e) {
-      return 'Unknown';
-    }
-  }
-
-  void _showRemoteActions(BuildContext context, Map<String, dynamic> client, AppProvider appProvider) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1A1F3A),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Remote Actions',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 20),
-            _buildActionTile(
-              context,
-              Icons.refresh,
-              'Restart Application',
-              'Restart the desktop application',
-              Colors.orange,
-              () async {
-                Navigator.pop(context);
-                final success = await appProvider.sendRemoteCommand(
-                  clientId: client['client_id'],
-                  command: 'restart_application',
-                );
-                _showResult(context, success, 'Application restart command sent');
-              },
-            ),
-            _buildActionTile(
-              context,
-              Icons.storage,
-              'Refresh Database',
-              'Force database refresh',
-              Colors.blue,
-              () async {
-                Navigator.pop(context);
-                final success = await appProvider.sendRemoteCommand(
-                  clientId: client['client_id'],
-                  command: 'refresh_database',
-                );
-                _showResult(context, success, 'Database refresh command sent');
-              },
-            ),
-            _buildActionTile(
-              context,
-              Icons.currency_exchange,
-              'Update Exchange Rate',
-              'Force exchange rate update',
-              Colors.green,
-              () async {
-                Navigator.pop(context);
-                // Show dialog to enter exchange rate
-                _showExchangeRateDialog(context, client, appProvider);
-              },
-            ),
-            _buildActionTile(
-              context,
-              Icons.storage,
-              'Update MV Database',
-              'Push Used MV database to client',
-              Colors.purple,
-              () async {
-                Navigator.pop(context);
-                // Wait a bit for the menu to close before showing dialog
-                await Future.delayed(const Duration(milliseconds: 300));
-                if (!context.mounted) return;
-                // Show dialog to select MV database update
-                await _showMvDatabaseDialog(context, client, appProvider);
-              },
-            ),
-            const SizedBox(height: 10),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionTile(
-    BuildContext context,
-    IconData icon,
-    String title,
-    String subtitle,
-    Color color,
-    VoidCallback onTap,
-  ) {
-    return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Icon(icon, color: color, size: 24),
-      ),
-      title: Text(
-        title,
-        style: GoogleFonts.poppins(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          color: Colors.white,
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: GoogleFonts.poppins(
-          fontSize: 12,
-          color: Colors.white70,
-        ),
-      ),
-      onTap: onTap,
-    );
-  }
-
-  void _showResult(BuildContext context, bool success, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: success ? Colors.green : Colors.red,
-        duration: Duration(seconds: success ? 2 : 4),
-      ),
-    );
-  }
-
-  void _showExchangeRateDialog(BuildContext context, Map<String, dynamic> client, AppProvider appProvider) {
-    // Pre-fill with current exchange rates if available
-    final currentRate = appProvider.currentExchangeRate;
-    final currentTaxRate = currentRate != null ? (currentRate['rate'] ?? currentRate['tax_rate']) : null;
-    final currentPhase1Rate = currentRate?['phase1_rate'];
-    
-    final rateTaxController = TextEditingController(
-      text: currentTaxRate != null ? currentTaxRate.toString() : '',
-    );
-    final ratePhase1Controller = TextEditingController(
-      text: currentPhase1Rate != null ? currentPhase1Rate.toString() : '',
-    );
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1F3A),
-        title: Text(
-          'Update Exchange Rates',
-          style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
+        title: const Text('Client Details'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'These rates will be saved as defaults and sent to the desktop client.',
-                style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: rateTaxController,
-                keyboardType: TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(
-                  labelText: 'Tax Rate (USD to UGX)',
-                  labelStyle: GoogleFonts.poppins(color: Colors.white70),
-                  hintText: 'e.g., 3700',
-                  hintStyle: GoogleFonts.poppins(color: Colors.white54),
-                  helperText: 'Used for tax calculations',
-                  helperStyle: GoogleFonts.poppins(color: Colors.white54, fontSize: 11),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white.withOpacity(0.05),
-                ),
-                style: GoogleFonts.poppins(color: Colors.white),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: ratePhase1Controller,
-                keyboardType: TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(
-                  labelText: 'Phase 1 Rate (USD to UGX)',
-                  labelStyle: GoogleFonts.poppins(color: Colors.white70),
-                  hintText: 'Leave empty to use Tax Rate',
-                  hintStyle: GoogleFonts.poppins(color: Colors.white54),
-                  helperText: 'Used for Phase 1 calculations (optional)',
-                  helperStyle: GoogleFonts.poppins(color: Colors.white54, fontSize: 11),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white.withOpacity(0.05),
-                ),
-                style: GoogleFonts.poppins(color: Colors.white),
-              ),
+              _detailRow('Name', client['client_name'] ?? 'Unknown'),
+              _detailRow('ID', client['client_id'] ?? 'Unknown'),
+              _detailRow('Platform', client['platform'] ?? 'Unknown'),
+              _detailRow('Version', client['version'] ?? 'Unknown'),
+              _detailRow('IP Address', client['ip_address'] ?? 'Unknown'),
+              _detailRow('Status', client['status'] ?? 'Unknown'),
+              _detailRow('Last Seen', _formatLastSeen(client['last_seen'] ?? '')),
+              _detailRow('Created', _formatDate(client['created_at'] ?? '')),
             ],
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.poppins(color: Colors.white70),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final rateTaxText = rateTaxController.text.trim();
-              if (rateTaxText.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Please enter Tax Rate', style: GoogleFonts.poppins()),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-                return;
-              }
-              
-              final rateTax = double.tryParse(rateTaxText);
-              if (rateTax == null || rateTax <= 0) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Please enter a valid Tax Rate (must be greater than 0)', style: GoogleFonts.poppins()),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-                return;
-              }
-              
-              double? ratePhase1;
-              final phase1Text = ratePhase1Controller.text.trim();
-              if (phase1Text.isNotEmpty) {
-                ratePhase1 = double.tryParse(phase1Text);
-                if (ratePhase1 == null || ratePhase1 <= 0) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Please enter a valid Phase 1 Rate (must be greater than 0)', style: GoogleFonts.poppins()),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                  return;
-                }
-              }
-              
-              Navigator.pop(context);
-              
-              // Show loading indicator with a reference to close it
-              BuildContext? loadingContext;
-              showDialog(
-                context: context,
-                barrierDismissible: false,
-                builder: (dialogContext) {
-                  loadingContext = dialogContext;
-                  return AlertDialog(
-                    backgroundColor: const Color(0xFF1A1F3A),
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const CircularProgressIndicator(),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Updating exchange rates...',
-                          style: GoogleFonts.poppins(color: Colors.white),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              );
-              
-              // Ensure loading dialog closes even if there's an error
-              Future<void> closeLoading() async {
-                if (loadingContext != null && Navigator.canPop(loadingContext!)) {
-                  Navigator.pop(loadingContext!);
-                } else if (context.mounted) {
-                  Navigator.pop(context);
-                }
-              }
-              
-              try {
-                // Step 1: Update in Supabase (save as default) - direct call to avoid duplicate client updates
-                print('📊 [Exchange Rate] Step 1: Updating exchange rates in Supabase...');
-                print('   Tax Rate: $rateTax, Phase1 Rate: ${ratePhase1 ?? rateTax}');
-                
-                final updateSuccess = await SupabaseService.updateExchangeRate(
-                  rate: rateTax,
-                  source: 'Admin Update',
-                  phase1Rate: ratePhase1,
-                ).timeout(
-                  const Duration(seconds: 10),
-                  onTimeout: () {
-                    print('❌ [Exchange Rate] Supabase update timed out');
-                    return false;
-                  },
-                );
-                
-                print('📊 [Exchange Rate] Supabase update result: $updateSuccess');
-                
-                if (!updateSuccess) {
-                  await closeLoading();
-                  if (context.mounted) {
-                    _showResult(context, false, 'Failed to update exchange rates in database');
-                  }
-                  return;
-                }
-                
-                print('✅ [Exchange Rate] Exchange rates updated in Supabase');
-                
-                // Refresh the exchange rate in provider (with timeout)
-                print('📊 [Exchange Rate] Refreshing provider...');
-                try {
-                  await appProvider.refreshExchangeRate().timeout(const Duration(seconds: 5));
-                  print('✅ [Exchange Rate] Provider refreshed');
-                } catch (e) {
-                  print('⚠️ [Exchange Rate] Provider refresh failed (non-critical): $e');
-                }
-                
-                // Step 2: Send remote command to the specific desktop client (optional - doesn't affect success)
-                bool commandSuccess = false;
-                try {
-                  print('📤 [Exchange Rate] Step 2: Sending exchange rate update to desktop client...');
-                  print('   Client ID: ${client['client_id']}');
-                  final params = <String, dynamic>{
-                    'rate': rateTax,
-                    'tax_rate': rateTax,
-                  };
-                  if (ratePhase1 != null) {
-                    params['phase1_rate'] = ratePhase1;
-                  }
-                  print('   Parameters: $params');
-                  
-                  commandSuccess = await appProvider.sendRemoteCommand(
-                    clientId: client['client_id'],
-                    command: 'update_exchange_rate',
-                    parameters: params,
-                  ).timeout(
-                    const Duration(seconds: 10),
-                    onTimeout: () {
-                      print('⚠️ [Exchange Rate] Command send timed out');
-                      return false;
-                    },
-                  );
-                  
-                  if (commandSuccess) {
-                    print('✅ [Exchange Rate] Command sent successfully to desktop client');
-                  } else {
-                    print('⚠️ [Exchange Rate] Command send failed, but rates are saved as defaults');
-                  }
-                } catch (cmdError) {
-                  print('⚠️ [Exchange Rate] Error sending command (non-critical): $cmdError');
-                  // Continue anyway - rates are saved as defaults
-                }
-                
-                // Always close loading dialog
-                await closeLoading();
-                
-                if (context.mounted) {
-                  // Always show success if Supabase update succeeded
-                  final message = commandSuccess
-                      ? 'Exchange rates updated successfully!\n\nTax Rate: $rateTax\nPhase 1 Rate: ${ratePhase1 ?? rateTax}\n\nThese are now the default values and have been sent to the desktop client.'
-                      : 'Exchange rates updated successfully!\n\nTax Rate: $rateTax\nPhase 1 Rate: ${ratePhase1 ?? rateTax}\n\nThese are now the default values. The desktop client will use them on next sync.';
-                  
-                  _showResult(context, true, message);
-                }
-              } catch (e) {
-                print('❌ [Exchange Rate] Error updating exchange rates: $e');
-                print('❌ [Exchange Rate] Stack trace: ${StackTrace.current}');
-                
-                // Always close loading dialog on error
-                await closeLoading();
-                
-                if (context.mounted) {
-                  _showResult(context, false, 'Error updating exchange rates: $e');
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            ),
-            child: Text(
-              'Update',
-              style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600),
-            ),
+            child: const Text('Close'),
           ),
         ],
       ),
     );
   }
 
-  Future<void> _showMvDatabaseDialog(BuildContext context, Map<String, dynamic> client, AppProvider appProvider) async {
-    // Show loading dialog first
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1F3A),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 16),
-            Text(
-              'Loading database updates...',
-              style: GoogleFonts.poppins(color: Colors.white),
-            ),
-          ],
-        ),
-      ),
-    );
-    
-    try {
-      // Force refresh the list before showing dialog to get latest updates
-      print('🔄 Refreshing URA database updates list...');
-      await appProvider.refreshUraUpdates();
-      // Wait a bit to ensure state is updated
-      await Future.delayed(const Duration(milliseconds: 200));
-      final updates = appProvider.uraUpdates;
-      print('📋 Loaded ${updates.length} database update(s)');
-      
-      // Close loading dialog
-      if (context.mounted) {
-        Navigator.pop(context);
-      }
-      
-      if (updates.isEmpty) {
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('No MV database updates available. Please upload one first.', style: GoogleFonts.poppins()),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-        return;
-      }
-      
-      if (!context.mounted) return;
-      showDialog(
-        context: context,
-        builder: (context) => StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            return AlertDialog(
-              backgroundColor: const Color(0xFF1A1F3A),
-              title: Row(
-                children: [
-                  Text(
-                    'Select MV Database Update',
-                    style: GoogleFonts.poppins(color: Colors.white),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.refresh, color: Colors.white70),
-                    tooltip: 'Refresh list',
-                    onPressed: () async {
-                      setDialogState(() {});
-                      await appProvider.refreshUraUpdates();
-                      await Future.delayed(const Duration(milliseconds: 200));
-                      setDialogState(() {});
-                    },
-                  ),
-                ],
-              ),
-              content: SizedBox(
-                width: double.maxFinite,
-                height: MediaQuery.of(context).size.height * 0.5,
-                child: Consumer<AppProvider>(
-                  builder: (context, provider, _) {
-                    final currentUpdates = provider.uraUpdates;
-                    if (currentUpdates.isEmpty) {
-                      return Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.inbox, size: 48, color: Colors.white.withOpacity(0.3)),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No updates available',
-                              style: GoogleFonts.poppins(color: Colors.white70),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Upload a database file first',
-                              style: GoogleFonts.poppins(color: Colors.white54, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-                    return ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: currentUpdates.length,
-                      itemBuilder: (context, index) {
-                        final update = currentUpdates[index];
-                        final month = update['month'] ?? 'Unknown';
-                        final fileName = update['file_name'] ?? 'Unknown';
-                        final status = update['status'] ?? 'pending';
-                        final fileUrl = update['file_url'] ?? '';
-                        final createdAt = update['created_at'];
-                        String timeAgo = '';
-                        if (createdAt != null) {
-                          try {
-                            final created = DateTime.parse(createdAt);
-                            final now = DateTime.now().toUtc();
-                            final diff = now.difference(created);
-                            if (diff.inMinutes < 1) {
-                              timeAgo = 'Just now';
-                            } else if (diff.inMinutes < 60) {
-                              timeAgo = '${diff.inMinutes}m ago';
-                            } else if (diff.inHours < 24) {
-                              timeAgo = '${diff.inHours}h ago';
-                            } else {
-                              timeAgo = '${diff.inDays}d ago';
-                            }
-                          } catch (_) {
-                            timeAgo = '';
-                          }
-                        }
-                        
-                        return ListTile(
-                          leading: const Icon(Icons.storage, color: Colors.purple),
-                          title: Text(
-                            month,
-                            style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                fileName,
-                                style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
-                              ),
-                              if (timeAgo.isNotEmpty)
-                                Text(
-                                  'Uploaded $timeAgo • ${status}',
-                                  style: GoogleFonts.poppins(color: Colors.white54, fontSize: 10),
-                                )
-                              else
-                                Text(
-                                  status,
-                                  style: GoogleFonts.poppins(color: Colors.white54, fontSize: 10),
-                                ),
-                            ],
-                          ),
-                          trailing: status == 'completed' 
-                            ? const Icon(Icons.check_circle, color: Colors.green)
-                            : const Icon(Icons.pending, color: Colors.orange),
-                          onTap: () async {
-                            Navigator.pop(dialogContext);
-                            
-                            if (fileUrl.isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('No file URL available for this update', style: GoogleFonts.poppins()),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                              return;
-                            }
-                            
-                            print('📤 Sending update_mv_database command to desktop client...');
-                            print('   Client ID: ${client['client_id']}');
-                            print('   File URL: $fileUrl');
-                            print('   Month: $month');
-                            
-                            final success = await appProvider.sendRemoteCommand(
-                              clientId: client['client_id'],
-                              command: 'update_mv_database',
-                              parameters: {
-                                'file_url': fileUrl,
-                                'month': month,
-                                'record_count': update['record_count'] ?? 0,
-                              },
-                            );
-                            
-                            if (success) {
-                              print('✅ Command sent successfully - desktop should receive it within 5 seconds');
-                            } else {
-                              print('❌ Failed to send command');
-                            }
-                            
-                            _showResult(context, success, success 
-                              ? 'MV database update command sent ($month). Desktop will download and process the file.' 
-                              : 'Failed to send command');
-                          },
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: Text(
-                    'Cancel',
-                    style: GoogleFonts.poppins(color: Colors.white70),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      );
-    } catch (e) {
-      // Close loading dialog if still open
-      if (context.mounted) {
-        Navigator.pop(context);
-      }
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error loading updates: $e', style: GoogleFonts.poppins()),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 4),
-        ),
-      );
-    }
-  }
-
-  void _showActivityDetails(BuildContext context, Map<String, dynamic> activity) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1F3A),
-        title: Text(
-          'Activity Details',
-          style: GoogleFonts.poppins(color: Colors.white),
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildDetailRow('Action', activity['action'] ?? activity['command'] ?? 'Unknown'),
-              _buildDetailRow('Status', activity['status'] ?? 'unknown'),
-              _buildDetailRow('Created At', _formatTimeAgo(activity['created_at'] ?? '')),
-              if (activity['parameters'] != null && activity['parameters'].toString().isNotEmpty)
-                _buildDetailRow('Parameters', activity['parameters'].toString()),
-              if (activity['metadata'] != null && activity['metadata'].toString().isNotEmpty)
-                _buildDetailRow('Metadata', activity['metadata'].toString()),
-              _buildDetailRow('Type', activity['type'] ?? 'unknown'),
-              if (activity['username'] != null && activity['username'].toString().isNotEmpty)
-                _buildDetailRow('Username', activity['username'].toString()),
-              // Special handling for local invoices
-              if (activity['type'] == 'local_invoice') ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Local Invoice Actions',
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    // We need to access the parent context to show the PDF viewer
-                    // This is a bit tricky since we're in a dialog, but we can pass the activity data
-                    // to the parent and have it handle the PDF viewing
-                    Navigator.of(context).pop(); // Close the dialog
-                    // We'll need to find a way to communicate with the parent
-                    // For now, let's just show a snackbar
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('PDF viewing for local invoices needs to be implemented', style: GoogleFonts.poppins()),
-                        backgroundColor: const Color(0xFF2D3748),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
-                  label: Text('View PDF', style: GoogleFonts.poppins(color: Colors.white)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF667EEA),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Close',
-              style: GoogleFonts.poppins(color: const Color(0xFF667EEA)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _viewLocalInvoice(Map<String, dynamic> activity, BuildContext context) async {
-    // Extract PDF path from activity metadata
-    final metadata = activity['metadata'] as Map<String, dynamic>?;
-    final localPdfPath = metadata?['local_pdf_path'] as String?;
-    
-    if (localPdfPath == null || localPdfPath.isEmpty) {
-      // Show error message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No local PDF file found for this invoice', style: GoogleFonts.poppins()),
-          backgroundColor: const Color(0xFF2D3748),
-        ),
-      );
-      return;
-    }
-    
-    // Check if file exists
-    final file = File(localPdfPath);
-    if (!await file.exists()) {
-      // Show error message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('PDF file does not exist: $localPdfPath', style: GoogleFonts.poppins()),
-          backgroundColor: const Color(0xFF2D3748),
-        ),
-      );
-      return;
-    }
-    
-    // Show PDF viewer
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1A1F3A),
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => _PdfViewerSheet(pdfPath: localPdfPath),
-    );
-  }
-
-  
-  String _formatTimeAgo(String dateStr) {
-    if (dateStr.isEmpty) return 'Unknown';
-    
-    try {
-      final dateTime = DateTime.parse(dateStr);
-      final now = DateTime.now();
-      final difference = now.difference(dateTime);
-      
-      if (difference.inMinutes < 1) {
-        return 'Just now';
-      } else if (difference.inMinutes < 60) {
-        return '${difference.inMinutes}m ago';
-      } else if (difference.inHours < 24) {
-        return '${difference.inHours}h ago';
-      } else {
-        return '${difference.inDays}d ago';
-      }
-    } catch (e) {
-      return 'Unknown';
-    }
-  }
-
-  void _showClientActivities(BuildContext context, Map<String, dynamic> client) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1A1F3A),
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => _ClientActivitiesDialog(
-        clientId: (client['client_id'] ?? '').toString(),
-        clientName: (client['client_name'] ?? 'Client').toString(),
-        onViewLocalInvoice: (activity) => _viewLocalInvoice(activity, context),
-      ),
-    );
-  }
-
-}
-class _PdfViewerSheet extends StatefulWidget {
-  final String pdfPath;
-
-  const _PdfViewerSheet({Key? key, required this.pdfPath}) : super(key: key);
-
-  @override
-  State<_PdfViewerSheet> createState() => _PdfViewerSheetState();
-}
-
-class _PdfViewerSheetState extends State<_PdfViewerSheet> {
-  int _currentPage = 0;
-  int _totalPages = 0;
-  bool _isLoading = true;
-  bool _error = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.8,
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Invoice PDF',
-                  style: GoogleFonts.poppins(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          
-          // Page info
-          if (_totalPages > 0)
-            Text(
-              'Page ${_currentPage + 1} of $_totalPages',
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.white70,
-              ),
-            ),
-          const SizedBox(height: 8),
-          
-          // PDF Viewer
-          Expanded(
-            child: _error
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.error, size: 48, color: Colors.red),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Error loading PDF',
-                          style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'File may be corrupted or missing',
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            color: Colors.white70,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : PDFView(
-                        filePath: widget.pdfPath,
-                        enableSwipe: true,
-                        swipeHorizontal: false,
-                        autoSpacing: true,
-                        pageFling: true,
-                        pageSnap: true,
-                        defaultPage: 0,
-                        fitPolicy: FitPolicy.BOTH,
-                        preventLinkNavigation: false,
-                        onRender: (_pages) {
-                          setState(() {
-                            _totalPages = _pages!;
-                            _isLoading = false;
-                          });
-                        },
-                        onError: (error) {
-                          setState(() {
-                            _error = true;
-                            _isLoading = false;
-                          });
-                          print('Error loading PDF: $error');
-                        },
-                        onPageChanged: (int? page, int? total) {
-                          setState(() {
-                            _currentPage = page!;
-                          });
-                        },
-                      ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ClientActivitiesDialog extends StatefulWidget {
-  final String clientId;
-  final String clientName;
-  final Function(Map<String, dynamic>)? onViewLocalInvoice;
-
-  const _ClientActivitiesDialog({
-    required this.clientId,
-    required this.clientName,
-    this.onViewLocalInvoice,
-  });
-
-  @override
-  State<_ClientActivitiesDialog> createState() => _ClientActivitiesDialogState();
-}class _ClientActivitiesDialogState extends State<_ClientActivitiesDialog> {
-  bool _loading = true;
-  List<Map<String, dynamic>> _activities = [];
-  Duration _timeFilter = const Duration(hours: 24); // Default: last 24 hours
-  String _selectedFilter = '24h'; // 24h, 7d, 30d, all
-
-  Widget _buildDetailRow(String label, String value) {
+  Widget _detailRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1575,26 +524,549 @@ class _ClientActivitiesDialog extends StatefulWidget {
             width: 80,
             child: Text(
               '$label:',
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.white70,
-              ),
+              style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13, fontWeight: FontWeight.w600, color: _textSecondary),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.white,
-              ),
+              style: GoogleFonts.plusJakartaSans(fontSize: 13, color: _textPrimary),
             ),
           ),
         ],
       ),
     );
   }
+
+  Future<void> _deleteClient(BuildContext context, Map<String, dynamic> client) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Client?'),
+        content: Text(
+          'Client: ${client['client_name'] ?? client['client_id']}\nThis cannot be undone.',
+          style: GoogleFonts.plusJakartaSans(color: _textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Delete',
+                style: GoogleFonts.plusJakartaSans(color: const Color(0xFFDC2626))),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      final ok = await SupabaseService.deleteDesktopClient(client['client_id']);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok ? 'Client deleted' : 'Failed to delete'),
+          backgroundColor: ok ? const Color(0xFF059669) : const Color(0xFFDC2626),
+        ),
+      );
+      if (ok) await context.read<AppProvider>().refresh();
+    }
+  }
+
+  void _showRemoteActions(BuildContext context, Map<String, dynamic> client, AppProvider appProvider) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => _RemoteActionsSheet(
+        client: client,
+        appProvider: appProvider,
+        onResult: (success, message) => _showResult(context, success, message),
+        onShowExchangeRateDialog: (ctx) =>
+            _showExchangeRateDialog(ctx, client, appProvider),
+        onShowMvDatabaseDialog: (ctx) =>
+            _showMvDatabaseDialog(ctx, client, appProvider),
+      ),
+    );
+  }
+
+  void _showResult(BuildContext context, bool success, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: success ? const Color(0xFF059669) : const Color(0xFFDC2626),
+      ),
+    );
+  }
+
+  void _showExchangeRateDialog(
+      BuildContext context, Map<String, dynamic> client, AppProvider appProvider) {
+    final currentRate = appProvider.currentExchangeRate;
+    final currentTaxRate = currentRate != null
+        ? (currentRate['rate'] ?? currentRate['tax_rate'])
+        : null;
+    final currentPhase1Rate = currentRate?['phase1_rate'];
+
+    final rateTaxController =
+        TextEditingController(text: currentTaxRate?.toString() ?? '');
+    final ratePhase1Controller =
+        TextEditingController(text: currentPhase1Rate?.toString() ?? '');
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Update Exchange Rates'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Rates will be saved as defaults and sent to the desktop client.',
+                style: GoogleFonts.plusJakartaSans(color: _textSecondary, fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: rateTaxController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Tax Rate (USD → UGX)',
+                  hintText: 'e.g., 3700',
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: ratePhase1Controller,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Phase 1 Rate (optional)',
+                  hintText: 'Leave empty to use Tax Rate',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final rateTaxText = rateTaxController.text.trim();
+              if (rateTaxText.isEmpty) return;
+              final rateTax = double.tryParse(rateTaxText);
+              if (rateTax == null || rateTax <= 0) return;
+
+              double? ratePhase1;
+              final phase1Text = ratePhase1Controller.text.trim();
+              if (phase1Text.isNotEmpty) {
+                ratePhase1 = double.tryParse(phase1Text);
+              }
+
+              Navigator.pop(context);
+
+              BuildContext? loadingCtx;
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (ctx) {
+                  loadingCtx = ctx;
+                  return AlertDialog(
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(),
+                        const SizedBox(height: 16),
+                        Text('Updating exchange rates...',
+                            style: GoogleFonts.plusJakartaSans()),
+                      ],
+                    ),
+                  );
+                },
+              );
+
+              try {
+                final updateSuccess = await SupabaseService.updateExchangeRate(
+                  rate: rateTax,
+                  source: 'Admin Update',
+                  phase1Rate: ratePhase1,
+                ).timeout(const Duration(seconds: 10), onTimeout: () => false);
+
+                if (loadingCtx != null && Navigator.canPop(loadingCtx!)) {
+                  Navigator.pop(loadingCtx!);
+                }
+
+                if (!updateSuccess) {
+                  if (context.mounted) {
+                    _showResult(context, false, 'Failed to update exchange rates');
+                  }
+                  return;
+                }
+
+                try {
+                  await appProvider.refreshExchangeRate();
+                } catch (_) {}
+
+                bool commandSuccess = false;
+                try {
+                  final params = <String, dynamic>{'rate': rateTax, 'tax_rate': rateTax};
+                  if (ratePhase1 != null) params['phase1_rate'] = ratePhase1;
+                  commandSuccess = await appProvider.sendRemoteCommand(
+                    clientId: client['client_id'],
+                    command: 'update_exchange_rate',
+                    parameters: params,
+                  ).timeout(const Duration(seconds: 10), onTimeout: () => false);
+                } catch (_) {}
+
+                if (context.mounted) {
+                  _showResult(
+                    context,
+                    true,
+                    commandSuccess
+                        ? 'Exchange rates updated and sent to client!'
+                        : 'Exchange rates saved. Client will sync on next connection.',
+                  );
+                }
+              } catch (e) {
+                if (loadingCtx != null && Navigator.canPop(loadingCtx!)) {
+                  Navigator.pop(loadingCtx!);
+                }
+                if (context.mounted) {
+                  _showResult(context, false, 'Error: $e');
+                }
+              }
+            },
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showMvDatabaseDialog(
+      BuildContext context, Map<String, dynamic> client, AppProvider appProvider) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text('Loading database updates...', style: GoogleFonts.plusJakartaSans()),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      await appProvider.refreshUraUpdates();
+      await Future.delayed(const Duration(milliseconds: 200));
+      final updates = appProvider.uraUpdates;
+
+      if (context.mounted) Navigator.pop(context);
+
+      if (updates.isEmpty) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No MV database updates available.')),
+        );
+        return;
+      }
+
+      if (!context.mounted) return;
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Select MV Database Update'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: MediaQuery.of(context).size.height * 0.5,
+            child: Consumer<AppProvider>(
+              builder: (context, provider, _) {
+                final currentUpdates = provider.uraUpdates;
+                if (currentUpdates.isEmpty) {
+                  return Center(
+                    child: Text('No updates available',
+                        style: GoogleFonts.plusJakartaSans(color: _textSecondary)),
+                  );
+                }
+                return ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: currentUpdates.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final update = currentUpdates[index];
+                    final month = update['month'] ?? 'Unknown';
+                    final fileName = update['file_name'] ?? 'Unknown';
+                    final status = update['status'] ?? 'pending';
+                    final fileUrl = update['file_url'] ?? '';
+
+                    return ListTile(
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F3FF),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.storage_rounded,
+                            color: Color(0xFF7C3AED), size: 20),
+                      ),
+                      title: Text(month,
+                          style: GoogleFonts.plusJakartaSans(
+                              fontWeight: FontWeight.w600, fontSize: 14)),
+                      subtitle: Text(fileName,
+                          style: GoogleFonts.plusJakartaSans(
+                              color: _textSecondary, fontSize: 12)),
+                      trailing: status == 'completed'
+                          ? const Icon(Icons.check_circle_rounded,
+                              color: Color(0xFF059669))
+                          : const Icon(Icons.pending_rounded,
+                              color: Color(0xFFD97706)),
+                      onTap: () async {
+                        Navigator.pop(context);
+                        if (fileUrl.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('No file URL for this update')),
+                          );
+                          return;
+                        }
+                        final success = await appProvider.sendRemoteCommand(
+                          clientId: client['client_id'],
+                          command: 'update_mv_database',
+                          parameters: {
+                            'file_url': fileUrl,
+                            'month': month,
+                            'record_count': update['record_count'] ?? 0,
+                          },
+                        );
+                        if (context.mounted) {
+                          _showResult(
+                            context,
+                            success,
+                            success
+                                ? 'MV database update sent ($month)'
+                                : 'Failed to send command',
+                          );
+                        }
+                      },
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) Navigator.pop(context);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading updates: $e')),
+      );
+    }
+  }
+
+  void _showClientActivities(BuildContext context, Map<String, dynamic> client) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => _ClientActivitiesSheet(
+        clientId: (client['client_id'] ?? '').toString(),
+        clientName: (client['client_name'] ?? 'Client').toString(),
+      ),
+    );
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Remote actions bottom sheet
+// ────────────────────────────────────────────────────────────────────────────
+
+class _RemoteActionsSheet extends StatelessWidget {
+  final Map<String, dynamic> client;
+  final AppProvider appProvider;
+  final void Function(bool, String) onResult;
+  final void Function(BuildContext) onShowExchangeRateDialog;
+  final void Function(BuildContext) onShowMvDatabaseDialog;
+
+  const _RemoteActionsSheet({
+    required this.client,
+    required this.appProvider,
+    required this.onResult,
+    required this.onShowExchangeRateDialog,
+    required this.onShowMvDatabaseDialog,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE5E7EB),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Remote Actions',
+              style: GoogleFonts.plusJakartaSans(
+                  fontSize: 17, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              client['client_name'] ?? '',
+              style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13, color: const Color(0xFF6B7280)),
+            ),
+            const SizedBox(height: 16),
+            _actionTile(
+              context,
+              icon: Icons.refresh_rounded,
+              color: const Color(0xFFD97706),
+              bgColor: const Color(0xFFFFFBEB),
+              title: 'Restart Application',
+              subtitle: 'Restart the desktop application',
+              onTap: () async {
+                Navigator.pop(context);
+                final success = await appProvider.sendRemoteCommand(
+                  clientId: client['client_id'],
+                  command: 'restart_application',
+                );
+                onResult(success, 'Application restart command sent');
+              },
+            ),
+            _actionTile(
+              context,
+              icon: Icons.storage_rounded,
+              color: const Color(0xFF3B82F6),
+              bgColor: const Color(0xFFEFF6FF),
+              title: 'Refresh Database',
+              subtitle: 'Force database refresh',
+              onTap: () async {
+                Navigator.pop(context);
+                final success = await appProvider.sendRemoteCommand(
+                  clientId: client['client_id'],
+                  command: 'refresh_database',
+                );
+                onResult(success, 'Database refresh command sent');
+              },
+            ),
+            _actionTile(
+              context,
+              icon: Icons.currency_exchange_rounded,
+              color: const Color(0xFF059669),
+              bgColor: const Color(0xFFECFDF5),
+              title: 'Update Exchange Rate',
+              subtitle: 'Set a new exchange rate',
+              onTap: () {
+                Navigator.pop(context);
+                onShowExchangeRateDialog(context);
+              },
+            ),
+            _actionTile(
+              context,
+              icon: Icons.cloud_download_rounded,
+              color: const Color(0xFF7C3AED),
+              bgColor: const Color(0xFFF5F3FF),
+              title: 'Update MV Database',
+              subtitle: 'Push used MV database to client',
+              onTap: () {
+                Navigator.pop(context);
+                Future.delayed(const Duration(milliseconds: 300), () {
+                  if (context.mounted) onShowMvDatabaseDialog(context);
+                });
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _actionTile(
+    BuildContext context, {
+    required IconData icon,
+    required Color color,
+    required Color bgColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      leading: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, color: color, size: 22),
+      ),
+      title: Text(
+        title,
+        style: GoogleFonts.plusJakartaSans(
+            fontSize: 14, fontWeight: FontWeight.w600),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: GoogleFonts.plusJakartaSans(
+            fontSize: 12, color: const Color(0xFF6B7280)),
+      ),
+      onTap: onTap,
+    );
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Client activities bottom sheet
+// ────────────────────────────────────────────────────────────────────────────
+
+class _ClientActivitiesSheet extends StatefulWidget {
+  final String clientId;
+  final String clientName;
+
+  const _ClientActivitiesSheet({
+    required this.clientId,
+    required this.clientName,
+  });
+
+  @override
+  State<_ClientActivitiesSheet> createState() => _ClientActivitiesSheetState();
+}
+
+class _ClientActivitiesSheetState extends State<_ClientActivitiesSheet> {
+  bool _loading = true;
+  List<Map<String, dynamic>> _activities = [];
+  String _selectedFilter = '24h';
+  Duration _timeFilter = const Duration(hours: 24);
+
+  static const _textPrimary = Color(0xFF0F172A);
+  static const _textSecondary = Color(0xFF64748B);
 
   @override
   void initState() {
@@ -1607,13 +1079,8 @@ class _ClientActivitiesDialog extends StatefulWidget {
     try {
       List<Map<String, dynamic>> activities;
       if (_selectedFilter == 'all') {
-        // No time filter - get all activities
-        activities = await SupabaseService.getRemoteCommands(
-          widget.clientId,
-          limit: 100,
-        );
+        activities = await SupabaseService.getRemoteCommands(widget.clientId, limit: 100);
       } else {
-        // Use time filter
         activities = await SupabaseService.getRecentActivities(
           widget.clientId,
           timeFilter: _timeFilter,
@@ -1624,181 +1091,55 @@ class _ClientActivitiesDialog extends StatefulWidget {
         _loading = false;
       });
     } catch (e) {
-      print('Error loading activities: $e');
       setState(() => _loading = false);
     }
   }
 
-  void _changeTimeFilter(String filter) {
+  void _changeFilter(String filter) {
     setState(() {
       _selectedFilter = filter;
       switch (filter) {
-        case '24h':
-          _timeFilter = const Duration(hours: 24);
-          break;
-        case '7d':
-          _timeFilter = const Duration(days: 7);
-          break;
-        case '30d':
-          _timeFilter = const Duration(days: 30);
-          break;
-        case 'all':
-          _timeFilter = const Duration(days: 365); // Not used, but kept for consistency
-          break;
+        case '24h': _timeFilter = const Duration(hours: 24); break;
+        case '7d': _timeFilter = const Duration(days: 7); break;
+        case '30d': _timeFilter = const Duration(days: 30); break;
       }
-      _loadActivities();
     });
+    _loadActivities();
   }
 
   String _formatTimeAgo(String dateStr) {
     if (dateStr.isEmpty) return 'Unknown';
-    
     try {
       final dateTime = DateTime.parse(dateStr);
-      final now = DateTime.now();
-      final difference = now.difference(dateTime);
-      
-      if (difference.inMinutes < 1) {
-        return 'Just now';
-      } else if (difference.inMinutes < 60) {
-        return '${difference.inMinutes}m ago';
-      } else if (difference.inHours < 24) {
-        return '${difference.inHours}h ago';
-      } else {
-        return '${difference.inDays}d ago';
-      }
+      final difference = DateTime.now().difference(dateTime);
+      if (difference.inMinutes < 1) return 'Just now';
+      if (difference.inMinutes < 60) return '${difference.inMinutes}m ago';
+      if (difference.inHours < 24) return '${difference.inHours}h ago';
+      return '${difference.inDays}d ago';
     } catch (e) {
       return 'Unknown';
     }
   }
 
-  String _formatActivityDetails(Map<String, dynamic> parameters, Map<String, dynamic> metadata, bool isRemoteCommand) {
-    if (isRemoteCommand && parameters.isNotEmpty) {
-      // For remote commands, show parameters in a formatted way
-      final List<String> parts = [];
-      if (parameters.containsKey('rate')) {
-        parts.add('Rate: ${parameters['rate']}');
-      }
-      if (parameters.containsKey('phase1_rate')) {
-        parts.add('Phase1: ${parameters['phase1_rate']}');
-      }
-      if (parameters.containsKey('file_url')) {
-        parts.add('File: ${parameters['file_url'].toString().split('/').last}');
-      }
-      if (parameters.containsKey('month')) {
-        parts.add('Month: ${parameters['month']}');
-      }
-      if (parts.isEmpty) {
-        final paramsStr = parameters.toString();
-        return paramsStr.length > 50 ? paramsStr.substring(0, 50) + '...' : paramsStr;
-      }
-      return parts.join(' • ');
-    } else if (!isRemoteCommand && metadata.isNotEmpty) {
-      // For client activities, format metadata nicely
-      final List<String> parts = [];
-      
-      // Invoice activities
-      if (metadata.containsKey('invoice_number')) {
-        parts.add('Invoice: ${metadata['invoice_number']}');
-      }
-      if (metadata.containsKey('customer_name')) {
-        parts.add('Customer: ${metadata['customer_name']}');
-      }
-      if (metadata.containsKey('amount')) {
-        final amount = metadata['amount'];
-        if (amount is num) {
-          parts.add('Amount: UGX ${amount.toStringAsFixed(0)}');
-        } else {
-          parts.add('Amount: $amount');
-        }
-      }
-      
-      // Customer activities
-      if (metadata.containsKey('customer_name') && !parts.any((p) => p.contains('Customer:'))) {
-        parts.add('Customer: ${metadata['customer_name']}');
-      }
-      
-      // Vehicle activities
-      if (metadata.containsKey('vehicle_name')) {
-        parts.add('Vehicle: ${metadata['vehicle_name']}');
-      }
-      if (metadata.containsKey('make')) {
-        parts.add('Make: ${metadata['make']}');
-      }
-      if (metadata.containsKey('model')) {
-        parts.add('Model: ${metadata['model']}');
-      }
-      if (metadata.containsKey('price')) {
-        final price = metadata['price'];
-        if (price is num) {
-          parts.add('Price: UGX ${price.toStringAsFixed(0)}');
-        } else {
-          parts.add('Price: $price');
-        }
-      }
-      
-      // Exchange rate activities
-      if (metadata.containsKey('rate')) {
-        parts.add('Rate: ${metadata['rate']}');
-      }
-      
-      if (parts.isEmpty) {
-        // Fallback to raw string if no known metadata fields
-        final metaStr = metadata.toString();
-        return metaStr.length > 50 ? metaStr.substring(0, 50) + '...' : metaStr;
-      }
-      
-      return parts.join(' • ');
-    }
-    return '';
-  }
-
-  String _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'completed':
-      case 'success':
-        return 'green';
-      case 'pending':
-        return 'orange';
-      case 'failed':
-      case 'error':
-        return 'red';
-      default:
-        return 'grey';
-    }
-  }
-
   IconData _getCommandIcon(String command) {
-    // Map common action types to icons
     final cmd = command.toLowerCase();
-    if (cmd.contains('restart') || cmd.contains('refresh')) {
-      return Icons.refresh;
-    } else if (cmd.contains('database') || cmd.contains('db')) {
-      return Icons.storage;
-    } else if (cmd.contains('exchange') || cmd.contains('rate')) {
-      return Icons.currency_exchange;
-    } else if (cmd.contains('download') || cmd.contains('update')) {
-      return Icons.cloud_download;
-    } else if (cmd.contains('sync') || cmd.contains('user')) {
-      return Icons.sync;
-    } else if (cmd.contains('create') || cmd.contains('add')) {
-      return Icons.add_circle;
-    } else if (cmd.contains('edit') || cmd.contains('update')) {
-      return Icons.edit;
-    } else if (cmd.contains('delete') || cmd.contains('remove')) {
-      return Icons.delete;
-    } else if (cmd.contains('invoice')) {
-      return Icons.receipt;
-    } else if (cmd.contains('payment')) {
-      return Icons.payment;
-    } else if (cmd.contains('customer') || cmd.contains('client')) {
-      return Icons.person;
-    } else if (cmd.contains('vehicle')) {
-      return Icons.directions_car;
-    } else if (cmd.contains('login') || cmd.contains('logout')) {
-      return Icons.login;
-    } else {
-      return Icons.settings;
+    if (cmd.contains('restart') || cmd.contains('refresh')) return Icons.refresh_rounded;
+    if (cmd.contains('database') || cmd.contains('db')) return Icons.storage_rounded;
+    if (cmd.contains('exchange') || cmd.contains('rate')) return Icons.currency_exchange_rounded;
+    if (cmd.contains('download') || cmd.contains('update')) return Icons.cloud_download_rounded;
+    if (cmd.contains('invoice')) return Icons.receipt_rounded;
+    if (cmd.contains('customer') || cmd.contains('client')) return Icons.person_rounded;
+    if (cmd.contains('vehicle')) return Icons.directions_car_rounded;
+    if (cmd.contains('login')) return Icons.login_rounded;
+    return Icons.settings_rounded;
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed': case 'success': return const Color(0xFF059669);
+      case 'pending': return const Color(0xFFD97706);
+      case 'failed': case 'error': return const Color(0xFFDC2626);
+      default: return const Color(0xFF6B7280);
     }
   }
 
@@ -1808,12 +1149,25 @@ class _ClientActivitiesDialog extends StatefulWidget {
       initialChildSize: 0.9,
       minChildSize: 0.5,
       maxChildSize: 0.95,
-      builder: (context, scrollController) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            // Header
-            Row(
+      expand: false,
+      builder: (context, scrollController) => Column(
+        children: [
+          // Handle
+          Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 8),
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE5E7EB),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          // Header
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
               children: [
                 Expanded(
                   child: Column(
@@ -1821,235 +1175,171 @@ class _ClientActivitiesDialog extends StatefulWidget {
                     children: [
                       Text(
                         'Recent Activities',
-                        style: GoogleFonts.poppins(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 18, fontWeight: FontWeight.w700, color: _textPrimary),
                       ),
-                      const SizedBox(height: 4),
                       Text(
                         widget.clientName,
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          color: Colors.white70,
-                        ),
+                        style: GoogleFonts.plusJakartaSans(fontSize: 13, color: _textSecondary),
                       ),
                     ],
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
+                  icon: const Icon(Icons.close_rounded),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            
-            // Time filter buttons
-            Row(
+          ),
+          const SizedBox(height: 8),
+          // Filter chips
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
               children: [
-                _buildFilterButton('24h', 'Last 24h'),
+                _filterChip('24h', 'Last 24h'),
                 const SizedBox(width: 8),
-                _buildFilterButton('7d', 'Last 7d'),
+                _filterChip('7d', 'Last 7d'),
                 const SizedBox(width: 8),
-                _buildFilterButton('30d', 'Last 30d'),
+                _filterChip('30d', 'Last 30d'),
                 const SizedBox(width: 8),
-                _buildFilterButton('all', 'All'),
+                _filterChip('all', 'All'),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.refresh, color: Colors.white70),
+                  icon: const Icon(Icons.refresh_rounded, size: 20),
                   onPressed: _loadActivities,
-                  tooltip: 'Refresh',
+                  color: _textSecondary,
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            
-            // Activities list
-            Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _activities.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.history,
-                                size: 64,
-                                color: Colors.white.withOpacity(0.3),
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'No activities found',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 16,
-                                  color: Colors.white70,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'No activities in the selected time period',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  color: Colors.white54,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : ListView.separated(
-                          controller: scrollController,
-                          itemCount: _activities.length,
-                          separatorBuilder: (_, __) => const Divider(
-                            color: Colors.white12,
-                            height: 1,
-                          ),
-                          itemBuilder: (context, index) {
-                            final activity = _activities[index];
-                            final action = activity['action'] ?? activity['command'] ?? 'Unknown';
-                            final status = activity['status'] ?? 'unknown';
-                            final createdAt = activity['created_at'] ?? '';
-                            final parameters = activity['parameters'] != null 
-                                ? Map<String, dynamic>.from(activity['parameters'] as Map<dynamic, dynamic>)
-                                : <String, dynamic>{};
-                            final metadata = activity['metadata'] != null 
-                                ? Map<String, dynamic>.from(activity['metadata'] as Map<dynamic, dynamic>)
-                                : <String, dynamic>{};
-                            final activityType = activity['type'] ?? 'unknown';
-                            final username = activity['username'];
-                            
-                            // Determine if this is a remote command or client activity
-                            final isRemoteCommand = activityType == 'remote_command';
-                            
-                            final statusColor = _getStatusColor(status);
-                            Color statusColorValue;
-                            switch (statusColor) {
-                              case 'green':
-                                statusColorValue = Colors.green;
-                                break;
-                              case 'orange':
-                                statusColorValue = Colors.orange;
-                                break;
-                              case 'red':
-                                statusColorValue = Colors.red;
-                                break;
-                              default:
-                                statusColorValue = Colors.grey;
-                            }
-                            
-                            // Format action title with better formatting
-                            String actionTitle = action.replaceAll('_', ' ');
-                            // Capitalize first letter of each word
-                            actionTitle = actionTitle.split(' ').map((word) {
-                              if (word.isEmpty) return word;
-                              return word[0].toUpperCase() + word.substring(1).toLowerCase();
-                            }).join(' ');
-                            
-                            if (isRemoteCommand) {
-                              actionTitle = '📱 $actionTitle'; // Indicate it's from mobile
-                            } else {
-                              actionTitle = '🖥️ $actionTitle'; // Indicate it's from desktop
-                            }
-                            
-                            return ListTile(
-                              leading: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: statusColorValue.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Icon(
-                                  _getCommandIcon(action),
-                                  color: statusColorValue,
-                                  size: 20,
-                                ),
-                              ),
-                              title: Text(
-                                actionTitle,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    children: [
-                                      Text(
-                                        'Status: ${status.toUpperCase()}',
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 12,
-                                          color: statusColorValue,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                      if (username != null && username.toString().isNotEmpty) ...[
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          '• User: $username',
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 11,
-                                            color: Colors.white70,
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                  if (parameters.isNotEmpty || metadata.isNotEmpty)
-                                    Text(
-                                      _formatActivityDetails(
-                                        parameters,
-                                        metadata,
-                                        isRemoteCommand,
-                                      ),
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 12,
-                                        color: Colors.white70,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              onTap: () {
-                                Navigator.pop(context);
-                                // Call the parent's _showActivityDetails method through a callback
-                                widget.onViewLocalInvoice?.call(activity);
-                              },
-                            );
-                          },
+          ),
+          const Divider(),
+          // List
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _activities.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.history_rounded, size: 48, color: Colors.grey.shade300),
+                            const SizedBox(height: 12),
+                            Text('No activities found',
+                                style: GoogleFonts.plusJakartaSans(color: _textSecondary)),
+                          ],
                         ),
-            ),
-          ],
-        ),
+                      )
+                    : ListView.separated(
+                        controller: scrollController,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        itemCount: _activities.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final activity = _activities[index];
+                          final action =
+                              activity['action'] ?? activity['command'] ?? 'Unknown';
+                          final status = activity['status'] ?? 'unknown';
+                          final createdAt = activity['created_at'] ?? '';
+                          final username = activity['username'];
+                          final isRemote = activity['type'] == 'remote_command';
+
+                          final statusColor = _getStatusColor(status);
+                          String actionTitle = action
+                              .toString()
+                              .replaceAll('_', ' ')
+                              .split(' ')
+                              .map((w) => w.isEmpty
+                                  ? w
+                                  : w[0].toUpperCase() + w.substring(1).toLowerCase())
+                              .join(' ');
+
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 4),
+                            leading: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: statusColor.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(_getCommandIcon(action),
+                                  color: statusColor, size: 20),
+                            ),
+                            title: Row(
+                              children: [
+                                Text(
+                                  isRemote ? '📱 ' : '🖥️ ',
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    actionTitle,
+                                    style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 13, fontWeight: FontWeight.w600,
+                                        color: _textPrimary),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 2),
+                                Row(
+                                  children: [
+                                    Text(
+                                      status.toUpperCase(),
+                                      style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: statusColor),
+                                    ),
+                                    if (username != null) ...[
+                                      Text(' • ',
+                                          style: GoogleFonts.plusJakartaSans(
+                                              fontSize: 11, color: _textSecondary)),
+                                      Text(username.toString(),
+                                          style: GoogleFonts.plusJakartaSans(
+                                              fontSize: 11, color: _textSecondary)),
+                                    ],
+                                  ],
+                                ),
+                                Text(
+                                  _formatTimeAgo(createdAt),
+                                  style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      color: const Color(0xFF9CA3AF)),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildFilterButton(String value, String label) {    final isSelected = _selectedFilter == value;
+  Widget _filterChip(String value, String label) {
+    final isSelected = _selectedFilter == value;
     return GestureDetector(
-      onTap: () => _changeTimeFilter(value),
+      onTap: () => _changeFilter(value),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected
-              ? Colors.amber.withOpacity(0.2)
-              : Colors.white.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected ? Colors.amber : Colors.white.withOpacity(0.2),
-            width: isSelected ? 2 : 1,
-          ),
+          color: isSelected ? const Color(0xFF1E40AF) : const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(20),
         ),
         child: Text(
           label,
-          style: GoogleFonts.poppins(
+          style: GoogleFonts.plusJakartaSans(
             fontSize: 12,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-            color: isSelected ? Colors.amber : Colors.white70,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : _textSecondary,
           ),
         ),
       ),

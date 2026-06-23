@@ -23,6 +23,7 @@ import '../services/date_service.dart';
 import 'invoice_detail_screen.dart';
 
 import '../services/customer_service.dart';
+import '../utils/email_display.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 
@@ -58,6 +59,8 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   final _notesController = TextEditingController();
   final _snVerificationController = TextEditingController();
   final _chassisNoController = TextEditingController();
+  final _modelController = TextEditingController();
+  final _modelSuffixController = TextEditingController();
 
   // Phase 1 (Upfront) fee inputs
   final _cfMombasaController = TextEditingController(text: '0');
@@ -84,7 +87,6 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   final _invoiceDateController = TextEditingController();
   final _dueDateController = TextEditingController();
   DateTime? _currentInternetDate;
-  bool _isLoadingDate = false;
 
   // Vehicle details
   String? _selectedMake;
@@ -94,7 +96,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   double? _selectedCifUSD;
   String? _selectedSerialNumber;
   String _selectedFuelType = 'Petrol'; // Default fuel type
-  String _selectedTransmission = 'Auto'; // Default transmission
+  String _selectedTransmission = 'Automatic'; // Default transmission
   String _selectedColor = 'White'; // Default color
   bool _isCustomColor = false;
   final TextEditingController _customColorController = TextEditingController();
@@ -111,7 +113,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   
   // Transmission options
   static const List<String> _transmissionOptions = [
-    'Auto',
+    'Automatic',
     'Manual',
     'Auto/Manual',
     'CVT',
@@ -190,6 +192,16 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   bool _tickCfMombasa = true;
   bool _tickClearance = false;
   bool _tickCfKampala = false;
+  bool _includePhaseTwo = false;
+  /// Include tax to URA in invoice. Default true (always ticked).
+  bool _includeTaxToUra = true;
+  static const String _defaultNumberPlates = '714300';
+  static const String _defaultThirdPartyInsurance = '70000';
+  static const String _defaultAgentFees = '400000';
+  
+  // Exchange rate locks
+  bool _isExchangeRateLocked = true; // Locked by default
+  bool _isExchangeRatePhase1Locked = true; // Locked by default
   
   // S/N Verification
   final _enhancedService = EnhancedUraLookupService();
@@ -202,6 +214,117 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     _initializeForm();
     _setupDynamicConversion();
     _setupExchangeRateListener();
+    // Load lock states first, then locked values will be restored
+    _loadExchangeRateLockStates().then((_) {
+      // After loading lock states, ensure locked values are applied
+      if (mounted) {
+        _loadExchangeRates();
+      }
+    });
+  }
+  
+  // Load exchange rate lock states and locked values from SharedPreferences
+  Future<void> _loadExchangeRateLockStates() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _isExchangeRateLocked = prefs.getBool('exchange_rate_locked') ?? true;
+        _isExchangeRatePhase1Locked = prefs.getBool('exchange_rate_phase1_locked') ?? true;
+        
+        // If locked, restore the saved values
+        if (_isExchangeRateLocked) {
+          final savedRate = prefs.getDouble('locked_exchange_rate');
+          if (savedRate != null) {
+            _exchangeRateController.text = savedRate.toStringAsFixed(2);
+          } else {
+            // First time locking, save current value as default
+            final currentRate = double.tryParse(_exchangeRateController.text) ?? 3834.56;
+            _exchangeRateController.text = currentRate.toStringAsFixed(2);
+            prefs.setDouble('locked_exchange_rate', currentRate);
+          }
+        }
+        
+        if (_isExchangeRatePhase1Locked) {
+          final savedPhase1Rate = prefs.getDouble('locked_exchange_rate_phase1');
+          if (savedPhase1Rate != null) {
+            _exchangeRatePhase1Controller.text = savedPhase1Rate.toStringAsFixed(2);
+          } else {
+            // First time locking, save current value as default
+            final currentPhase1Rate = double.tryParse(_exchangeRatePhase1Controller.text) ?? 3834.56;
+            _exchangeRatePhase1Controller.text = currentPhase1Rate.toStringAsFixed(2);
+            prefs.setDouble('locked_exchange_rate_phase1', currentPhase1Rate);
+          }
+        }
+      });
+    } catch (e) {
+      print('Error loading exchange rate lock states: $e');
+    }
+  }
+  
+  // Save exchange rate lock states and values to SharedPreferences
+  Future<void> _saveExchangeRateLockStates() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('exchange_rate_locked', _isExchangeRateLocked);
+      await prefs.setBool('exchange_rate_phase1_locked', _isExchangeRatePhase1Locked);
+      
+      // When locking, save the current values
+      if (_isExchangeRateLocked) {
+        final currentRate = double.tryParse(_exchangeRateController.text) ?? 3834.56;
+        await prefs.setDouble('locked_exchange_rate', currentRate);
+        // Update the controller to ensure it's set to the saved value
+        _exchangeRateController.text = currentRate.toStringAsFixed(2);
+      }
+      
+      if (_isExchangeRatePhase1Locked) {
+        final currentPhase1Rate = double.tryParse(_exchangeRatePhase1Controller.text) ?? 3834.56;
+        await prefs.setDouble('locked_exchange_rate_phase1', currentPhase1Rate);
+        // Update the controller to ensure it's set to the saved value
+        _exchangeRatePhase1Controller.text = currentPhase1Rate.toStringAsFixed(2);
+      }
+    } catch (e) {
+      print('Error saving exchange rate lock states: $e');
+    }
+  }
+  
+  // Toggle exchange rate lock
+  void _toggleExchangeRateLock() async {
+    setState(() {
+      _isExchangeRateLocked = !_isExchangeRateLocked;
+    });
+    
+    if (_isExchangeRateLocked) {
+      // When locking, save the current value
+      final currentRate = double.tryParse(_exchangeRateController.text) ?? 3834.56;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('locked_exchange_rate', currentRate);
+      // Set to saved value
+      setState(() {
+        _exchangeRateController.text = currentRate.toStringAsFixed(2);
+      });
+    }
+    
+    await _saveExchangeRateLockStates();
+  }
+  
+  // Toggle Phase 1 exchange rate lock
+  void _toggleExchangeRatePhase1Lock() async {
+    setState(() {
+      _isExchangeRatePhase1Locked = !_isExchangeRatePhase1Locked;
+    });
+    
+    if (_isExchangeRatePhase1Locked) {
+      // When locking, save the current value
+      final currentPhase1Rate = double.tryParse(_exchangeRatePhase1Controller.text) ?? 3834.56;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('locked_exchange_rate_phase1', currentPhase1Rate);
+      // Set to saved value
+      setState(() {
+        _exchangeRatePhase1Controller.text = currentPhase1Rate.toStringAsFixed(2);
+      });
+    }
+    
+    await _saveExchangeRateLockStates();
   }
 
   @override
@@ -347,7 +470,8 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       ));
     }
 
-    // URA Taxes breakdown stored as consolidated line
+    // URA taxes are ALWAYS included.
+    // Phase 2 toggle only controls extra registration fees (plates/insurance/agent), not URA taxes.
     final ura = _phaseTwoUraTaxesTotal();
     if (ura > 0) {
       items.add(InvoiceItem(
@@ -360,35 +484,42 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       ));
     }
 
-    // Registration fees (Phase 2, converted with Phase 1 rate for USD reference)
-    const plates = 714300.0;
-    const agent = 400000.0;
-    const regProcess = 2667300.0;
+    if (_includePhaseTwo) {
+      final plates = double.tryParse(_numberPlateController.text) ?? 714300.0;
+      final insurance = double.tryParse(_thirdPartyInsuranceController.text) ?? 0.0;
+      final agent = double.tryParse(_agentFeesController.text) ?? 400000.0;
 
-    items.add(InvoiceItem(
-      productName: 'Number Plates',
-      description: 'Registration plates fee',
-      price: plates,
-      quantity: 1,
-      taxRate: 0,
-      discount: 0,
-    ));
-    items.add(InvoiceItem(
-      productName: 'Agent Fees (Registration)',
-      description: 'Registration agent fees',
-      price: agent,
-      quantity: 1,
-      taxRate: 0,
-      discount: 0,
-    ));
-    items.add(InvoiceItem(
-      productName: 'Registration Process',
-      description: 'Registration processing fee',
-      price: regProcess,
-      quantity: 1,
-      taxRate: 0,
-      discount: 0,
-    ));
+      if (plates > 0) {
+        items.add(InvoiceItem(
+          productName: 'Number Plates',
+          description: 'Registration plates fee',
+          price: plates,
+          quantity: 1,
+          taxRate: 0,
+          discount: 0,
+        ));
+      }
+      if (insurance > 0) {
+        items.add(InvoiceItem(
+          productName: '3rd Party Insurance',
+          description: 'Mandatory third-party insurance',
+          price: insurance,
+          quantity: 1,
+          taxRate: 0,
+          discount: 0,
+        ));
+      }
+      if (agent > 0) {
+        items.add(InvoiceItem(
+          productName: 'Agent Fees (Registration)',
+          description: 'Registration agent fees',
+          price: agent,
+          quantity: 1,
+          taxRate: 0,
+          discount: 0,
+        ));
+      }
+    }
 
     return items;
   }
@@ -396,13 +527,19 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   void _initializeForm() {
     if (widget.customer != null) {
       _customerNameController.text = widget.customer!.name;
-      _customerEmailController.text = widget.customer!.email ?? '';
+      final rawEmail = widget.customer!.email ?? '';
+      _customerEmailController.text = isRealCustomerEmail(rawEmail) ? rawEmail : '';
       _customerPhoneController.text = widget.customer!.phone ?? '';
-      _customerAddressController.text = widget.customer!.address ?? '';
+      final rawAddr = widget.customer!.address ?? '';
+      _customerAddressController.text = rawAddr.trim().isEmpty ? '' : rawAddr;
     }
 
     if (widget.invoice != null) {
       // Pre-fill invoice data if editing
+      _selectedMake = widget.invoice!.vehicleMake.isNotEmpty ? widget.invoice!.vehicleMake : null;
+      _selectedModel = widget.invoice!.vehicleModel.isNotEmpty ? widget.invoice!.vehicleModel : null;
+      _modelController.text = widget.invoice!.vehicleModel;
+      _modelSuffixController.text = widget.invoice!.vehicleModelSuffix;
       _vehicleDescriptionController.text = '${widget.invoice!.vehicleMake} ${widget.invoice!.vehicleModel} (${widget.invoice!.vehicleYear})';
       _quantityController.text = '1';
       _unitPriceController.text = widget.invoice!.carPriceUSD.toString();
@@ -412,9 +549,34 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       // Pre-fill dates from existing invoice
       _invoiceDateController.text = DateFormat('yyyy-MM-dd').format(widget.invoice!.invoiceDate);
       _dueDateController.text = DateFormat('yyyy-MM-dd').format(widget.invoice!.dueDate);
+      _includePhaseTwo = (widget.invoice!.secondInstallmentUGX > 0) ||
+          (widget.invoice!.taxesURA > 0) ||
+          (widget.invoice!.numberPlatesFee > 0) ||
+          (widget.invoice!.thirdPartyInsurance > 0) ||
+          (widget.invoice!.agencyFees > 0);
+      _includeTaxToUra = widget.invoice!.taxesURA > 0;
+      if (_includePhaseTwo) {
+        final numberPlates = widget.invoice!.numberPlatesFee > 0
+            ? widget.invoice!.numberPlatesFee
+            : 714300.0;
+        final insurance = widget.invoice!.thirdPartyInsurance > 0
+            ? widget.invoice!.thirdPartyInsurance
+            : 70000.0;
+        final agent = widget.invoice!.agencyFees > 0
+            ? widget.invoice!.agencyFees
+            : 400000.0;
+        _numberPlateController.text = numberPlates.toStringAsFixed(0);
+        _thirdPartyInsuranceController.text = insurance.toStringAsFixed(0);
+        _agentFeesController.text = agent.toStringAsFixed(0);
+      } else {
+        _numberPlateController.clear();
+        _thirdPartyInsuranceController.clear();
+        _agentFeesController.clear();
+      }
     } else {
       // Auto-fill dates for new invoice
       _autoFillDates();
+      _setPhaseTwoInclusion(_tickClearance || _tickCfKampala);
     }
 
     // Ensure default fees are set (survive hot reloads)
@@ -438,6 +600,33 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       
+      // If rates are locked, use the locked values instead of auto-updating
+      if (_isExchangeRateLocked && !forceUpdate) {
+        final lockedRate = prefs.getDouble('locked_exchange_rate');
+        if (lockedRate != null) {
+          setState(() {
+            _exchangeRateController.text = lockedRate.toStringAsFixed(2);
+          });
+          print('🔒 Using locked exchange rate: $lockedRate');
+        }
+      }
+      
+      if (_isExchangeRatePhase1Locked && !forceUpdate) {
+        final lockedPhase1Rate = prefs.getDouble('locked_exchange_rate_phase1');
+        if (lockedPhase1Rate != null) {
+          setState(() {
+            _exchangeRatePhase1Controller.text = lockedPhase1Rate.toStringAsFixed(2);
+          });
+          print('🔒 Using locked Phase 1 exchange rate: $lockedPhase1Rate');
+        }
+      }
+      
+      // Only auto-update if rates are unlocked
+      if (_isExchangeRateLocked && _isExchangeRatePhase1Locked && !forceUpdate) {
+        // Both are locked, don't auto-update
+        return;
+      }
+      
       // Debug: Check what's in SharedPreferences
       final savedTaxRate = prefs.getDouble('exchange_rate_tax');
       final savedPhase1Rate = prefs.getDouble('exchange_rate_phase1');
@@ -449,12 +638,6 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       print('   exchange_rate_phase1: $savedPhase1Rate');
       print('   exchange_rate: $savedGenericRate');
       print('   last_updated: $lastUpdateStr');
-      
-      // Load tax rate
-      final taxRate = savedTaxRate ?? savedGenericRate ?? 3834.56;
-      
-      // Load phase 1 rate
-      final phase1Rate = savedPhase1Rate ?? taxRate;
       
       final currentTaxStr = _exchangeRateController.text.trim();
       final currentPhase1Str = _exchangeRatePhase1Controller.text.trim();
@@ -484,40 +667,55 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
         print('   No update timestamp found');
       }
       
-      final taxRateStr = taxRate.toStringAsFixed(2);
-      final phase1RateStr = phase1Rate.toStringAsFixed(2);
-      
-      // Always apply saved rates if:
-      // 1. Force update requested
-      // 2. Rates were recently updated (within 5 minutes) - always apply admin defaults
-      // 3. Current values are the hardcoded defaults
-      // 4. Saved rates exist and are different from current
-      bool shouldUpdateTax = forceUpdate || 
-                             ratesWereRecentlyUpdated || 
-                             currentTaxStr.isEmpty ||
-                             currentTaxStr == '3834.56' ||
-                             (prefs.containsKey('exchange_rate_tax') && taxRateStr != currentTaxStr);
-      
-      bool shouldUpdatePhase1 = forceUpdate || 
-                                ratesWereRecentlyUpdated || 
-                                currentPhase1Str.isEmpty ||
-                                currentPhase1Str == '3834.56' ||
-                                (prefs.containsKey('exchange_rate_phase1') && phase1RateStr != currentPhase1Str);
-      
-      print('   Should update Tax: $shouldUpdateTax, Phase1: $shouldUpdatePhase1');
-      
-      if (shouldUpdateTax) {
-        _exchangeRateController.text = taxRateStr;
-        print('✅ Applied default Tax Exchange Rate: $taxRateStr (was: $currentTaxStr)');
-      } else {
-        print('   Skipping Tax rate update (current: $currentTaxStr, saved: $taxRateStr)');
+      // Load tax rate (only if not locked)
+      if (!_isExchangeRateLocked) {
+        final taxRate = savedTaxRate ?? savedGenericRate ?? 3834.56;
+        final taxRateStr = taxRate.toStringAsFixed(2);
+        
+        // Always apply saved rates if:
+        // 1. Force update requested
+        // 2. Rates were recently updated (within 5 minutes) - always apply admin defaults
+        // 3. Current values are the hardcoded defaults
+        // 4. Saved rates exist and are different from current
+        bool shouldUpdateTax = forceUpdate || 
+                               ratesWereRecentlyUpdated || 
+                               currentTaxStr.isEmpty ||
+                               currentTaxStr == '3834.56' ||
+                               (prefs.containsKey('exchange_rate_tax') && taxRateStr != currentTaxStr);
+        
+        print('   Should update Tax: $shouldUpdateTax');
+        
+        if (shouldUpdateTax) {
+          setState(() {
+            _exchangeRateController.text = taxRateStr;
+          });
+          print('✅ Applied default Tax Exchange Rate: $taxRateStr (was: $currentTaxStr)');
+        } else {
+          print('   Skipping Tax rate update (current: $currentTaxStr, saved: $taxRateStr)');
+        }
       }
       
-      if (shouldUpdatePhase1) {
-        _exchangeRatePhase1Controller.text = phase1RateStr;
-        print('✅ Applied default Phase 1 Exchange Rate: $phase1RateStr (was: $currentPhase1Str)');
-      } else {
-        print('   Skipping Phase1 rate update (current: $currentPhase1Str, saved: $phase1RateStr)');
+      // Load phase 1 rate (only if not locked)
+      if (!_isExchangeRatePhase1Locked) {
+        final phase1Rate = savedPhase1Rate ?? savedTaxRate ?? savedGenericRate ?? 3834.56;
+        final phase1RateStr = phase1Rate.toStringAsFixed(2);
+        
+        bool shouldUpdatePhase1 = forceUpdate || 
+                                  ratesWereRecentlyUpdated || 
+                                  currentPhase1Str.isEmpty ||
+                                  currentPhase1Str == '3834.56' ||
+                                  (prefs.containsKey('exchange_rate_phase1') && phase1RateStr != currentPhase1Str);
+        
+        print('   Should update Phase1: $shouldUpdatePhase1');
+        
+        if (shouldUpdatePhase1) {
+          setState(() {
+            _exchangeRatePhase1Controller.text = phase1RateStr;
+          });
+          print('✅ Applied default Phase 1 Exchange Rate: $phase1RateStr (was: $currentPhase1Str)');
+        } else {
+          print('   Skipping Phase1 rate update (current: $currentPhase1Str, saved: $phase1RateStr)');
+        }
       }
       
       // Trigger UI update
@@ -531,12 +729,57 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     }
   }
 
+  DateTime _addWorkingDays(DateTime startDate, int workingDays) {
+    var date = startDate;
+    var addedDays = 0;
+
+    while (addedDays < workingDays) {
+      date = date.add(const Duration(days: 1));
+      final isWeekend = date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
+      if (!isWeekend) {
+        addedDays++;
+      }
+    }
+
+    return date;
+  }
+
+  int _environmentalReferenceYear() {
+    final invoiceDate = DateTime.tryParse(_invoiceDateController.text);
+    return invoiceDate?.year ?? DateTime.now().year;
+  }
+
+  int _environmentalCutoffYear() {
+    return _environmentalReferenceYear() - 10;
+  }
+
+  bool _isEnvironmentalLevyApplicable([int? vehicleYear]) {
+    final year = vehicleYear ?? _selectedYear;
+    if (year == null || year <= 0) {
+      return false;
+    }
+    return year <= _environmentalCutoffYear();
+  }
+
+  void _setPhaseTwoInclusion(bool include) {
+    _includePhaseTwo = include;
+    if (_includePhaseTwo) {
+      _numberPlateController.text = _defaultNumberPlates;
+      _thirdPartyInsuranceController.text = _defaultThirdPartyInsurance;
+      _agentFeesController.text = _defaultAgentFees;
+    } else {
+      _numberPlateController.clear();
+      _thirdPartyInsuranceController.clear();
+      _agentFeesController.clear();
+    }
+  }
+
+  void _applyPhaseTwoDefaultFromSelections() {
+    _setPhaseTwoInclusion(_tickClearance || _tickCfKampala);
+  }
+
   /// Auto-fill dates using internet date service with fallback to local date
   Future<void> _autoFillDates() async {
-    setState(() {
-      _isLoadingDate = true;
-    });
-
     try {
       // Try to get internet date first
       _currentInternetDate = await DateService.getCurrentDate();
@@ -544,14 +787,14 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       // Set invoice date to current internet date
       _invoiceDateController.text = DateFormat('yyyy-MM-dd').format(_currentInternetDate!);
       
-      // Set due date to 30 days from invoice date (adjustable)
-      final dueDate = _currentInternetDate!.add(const Duration(days: 30));
+      // Set due date to 5 working days from invoice date
+      final dueDate = _addWorkingDays(_currentInternetDate!, 5);
       _dueDateController.text = DateFormat('yyyy-MM-dd').format(dueDate);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✅ Dates auto-filled with internet date (both dates are adjustable)'),
+            content: Text('✅ Dates auto-filled with internet date'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 3),
           ),
@@ -564,41 +807,32 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       _currentInternetDate = localDate;
       
       _invoiceDateController.text = DateFormat('yyyy-MM-dd').format(localDate);
-      final dueDate = localDate.add(const Duration(days: 30));
+      final dueDate = _addWorkingDays(localDate, 5);
       _dueDateController.text = DateFormat('yyyy-MM-dd').format(dueDate);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('⚠️ Using local date (internet unavailable) - both dates are adjustable'),
+            content: Text('⚠️ Using local date (internet unavailable)'),
             backgroundColor: Colors.orange,
             duration: Duration(seconds: 3),
           ),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoadingDate = false;
-        });
-      }
+      // No loading indicator required for fixed invoice date flow.
     }
-  }
-
-  /// Refresh dates with current internet date
-  Future<void> _refreshDates() async {
-    await _autoFillDates();
   }
 
   /// Select due date using date picker
   Future<void> _selectDueDate() async {
     final currentDueDate = _dueDateController.text.isNotEmpty 
         ? DateTime.tryParse(_dueDateController.text) 
-        : DateTime.now().add(const Duration(days: 30));
+        : _addWorkingDays(_currentInternetDate ?? DateTime.now(), 5);
     
     final selectedDate = await showDatePicker(
       context: context,
-      initialDate: currentDueDate ?? DateTime.now().add(const Duration(days: 30)),
+      initialDate: currentDueDate ?? _addWorkingDays(_currentInternetDate ?? DateTime.now(), 5),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
       builder: (context, child) {
@@ -618,48 +852,6 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
 
     if (selectedDate != null) {
       _dueDateController.text = DateFormat('yyyy-MM-dd').format(selectedDate);
-    }
-  }
-
-  /// Select invoice date using date picker
-  Future<void> _selectInvoiceDate() async {
-    final currentInvoiceDate = _invoiceDateController.text.isNotEmpty 
-        ? DateTime.tryParse(_invoiceDateController.text) 
-        : DateTime.now();
-    
-    final selectedDate = await showDatePicker(
-      context: context,
-      initialDate: currentInvoiceDate ?? DateTime.now(),
-      firstDate: DateTime.now().subtract(const Duration(days: 30)), // Allow dates up to 30 days ago
-      lastDate: DateTime.now().add(const Duration(days: 30)), // Allow dates up to 30 days in future
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Colors.orange,
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: Colors.black,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-
-    if (selectedDate != null) {
-      _invoiceDateController.text = DateFormat('yyyy-MM-dd').format(selectedDate);
-      
-      // Show confirmation message
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ Invoice date updated to ${DateFormat('yyyy-MM-dd').format(selectedDate)}'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
     }
   }
 
@@ -696,6 +888,8 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     _importDutyPctController.dispose();
     _envLevyPctController.dispose();
     _customColorController.dispose();
+    _modelController.dispose();
+    _modelSuffixController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -704,6 +898,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     setState(() {
       _selectedMake = make;
       _selectedModel = model;
+      _modelController.text = model;
       _selectedYear = year;
       _selectedEngineCC = engineCC;
       _selectedCifUSD = cifUSD;
@@ -718,6 +913,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     setState(() {
       _selectedMake = make;
       _selectedModel = model;
+      _modelController.text = model;
       _selectedYear = year;
       _selectedEngineCC = engineCC;
       _selectedCifUSD = cifUSD;
@@ -993,6 +1189,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     setState(() {
       _selectedMake = correctedVehicle.make;
       _selectedModel = correctedVehicle.model;
+      _modelController.text = correctedVehicle.model;
       _selectedYear = correctedVehicle.year;
       _selectedEngineCC = correctedVehicle.engineCC;
       _selectedCifUSD = correctedVehicle.cifUsd;
@@ -1070,6 +1267,20 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   }
 
   void _saveInvoice() async {
+    if (widget.invoice?.isFinalized == true) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'This invoice is finalized and cannot be edited.',
+              style: GoogleFonts.poppins(),
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -1216,31 +1427,71 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
 
       final invoice = previewBase;
 
+      // Validate invoice before saving
+      if (invoice.customerId <= 0) {
+        Navigator.of(context).pop();
+        _showErrorDialog('Invalid customer ID. Please ensure customer is saved.');
+        return;
+      }
+      
+      if (invoice.invoiceNumber.isEmpty) {
+        Navigator.of(context).pop();
+        _showErrorDialog('Invalid invoice number. Please try again.');
+        return;
+      }
+      
+      print('💾 Saving invoice:');
+      print('   Invoice Number: ${invoice.invoiceNumber}');
+      print('   Customer ID: ${invoice.customerId}');
+      print('   Items count: ${invoice.items.length}');
+      print('   Total Amount: ${invoice.totalAmount}');
+
     // Save invoice using InvoiceProvider
     final invoiceProvider = Provider.of<InvoiceProvider>(context, listen: false);
     
     // Check if this is an update or new invoice
     bool success;
-    if (widget.invoice != null && widget.invoice!.id != null) {
-      // Update existing invoice
-      final updatedInvoice = invoice.copyWith(id: widget.invoice!.id);
-      success = await invoiceProvider.updateInvoice(updatedInvoice);
-    } else {
-      // Create new invoice
-      success = await invoiceProvider.addInvoice(invoice);
+    try {
+      if (widget.invoice != null && widget.invoice!.id != null) {
+        // Update existing invoice
+        print('📝 Updating existing invoice ID: ${widget.invoice!.id}');
+        final updatedInvoice = invoice.copyWith(id: widget.invoice!.id);
+        success = await invoiceProvider.updateInvoice(updatedInvoice);
+        print('✅ Update result: $success');
+      } else {
+        // Create new invoice
+        print('➕ Creating new invoice');
+        success = await invoiceProvider.addInvoice(invoice);
+        print('✅ Create result: $success');
+      }
+    } catch (e) {
+      print('❌ Error during save operation: $e');
+      Navigator.of(context).pop();
+      _showErrorDialog('Error saving invoice: ${e.toString()}');
+      return;
     }
     
     // Close loading dialog
     Navigator.of(context).pop();
     
     if (success) {
+      print('✅ Invoice saved successfully, refreshing providers...');
       // Refresh all providers to update dashboard
-      Provider.of<CustomerProvider>(context, listen: false).loadCustomers();
-      Provider.of<PaymentProvider>(context, listen: false).loadPayments();
+      try {
+        await invoiceProvider.loadInvoices();
+        Provider.of<CustomerProvider>(context, listen: false).loadCustomers();
+        Provider.of<PaymentProvider>(context, listen: false).loadPayments();
+        print('✅ Providers refreshed');
+      } catch (e) {
+        print('⚠️ Error refreshing providers: $e');
+      }
       
-      _showSuccessDialog();
+      _showSuccessDialog(
+        isUpdate: widget.invoice != null && widget.invoice!.id != null,
+      );
     } else {
-      _showErrorDialog('Failed to save invoice. Please try again.');
+      print('❌ Invoice save returned false');
+      _showErrorDialog('Failed to save invoice. Please check the console for details and try again.');
     }
     } catch (e) {
       // Close loading dialog if it's still open
@@ -1289,27 +1540,66 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     buffer.writeln('');
     
     // Phase 2 Details
+    buffer.writeln('Phase 2 Included: ${_includePhaseTwo ? 'Yes' : 'No'}');
     buffer.writeln('=== PHASE 2 (SETTLEMENT) ===');
     final rateTax = double.tryParse(_exchangeRateController.text) ?? 0.0;
-    final ratePhase1 = double.tryParse(_exchangeRatePhase1Controller.text) ?? rateTax;
-    final uraUgx = _taxResult?.totalTaxUGX ?? 0.0;
-    buffer.writeln('URA Taxes: UGX ${NumberFormat('#,##0.00').format(uraUgx)} (USD ${NumberFormat('#,##0.00').format(rateTax == 0 ? 0 : uraUgx / rateTax)})');
-    buffer.writeln('Number Plates: UGX 714,300.00 (USD ${NumberFormat('#,##0.00').format(ratePhase1 == 0 ? 0 : 714300 / ratePhase1)})');
-    buffer.writeln('Agency Fees: UGX 400,000.00 (USD ${NumberFormat('#,##0.00').format(ratePhase1 == 0 ? 0 : 400000 / ratePhase1)})');
-    buffer.writeln('Registration Process: UGX 2,667,300.00 (USD ${NumberFormat('#,##0.00').format(ratePhase1 == 0 ? 0 : 2667300 / ratePhase1)})');
+    final uraUgx = _phaseTwoUraTaxesTotal();
+    final plates = _includePhaseTwo ? (double.tryParse(_numberPlateController.text) ?? 714300.0) : 0.0;
+    final insurance = _includePhaseTwo ? (double.tryParse(_thirdPartyInsuranceController.text) ?? 0.0) : 0.0;
+    final agent = _includePhaseTwo ? (double.tryParse(_agentFeesController.text) ?? 400000.0) : 0.0;
+    final registrationProcess = uraUgx + plates + insurance + agent;
+
+    buffer.writeln('Include tax to URA: ${_includeTaxToUra ? 'Yes' : 'No'}');
+    if (_includeTaxToUra) {
+      buffer.writeln('URA Taxes: UGX ${NumberFormat('#,##0.00').format(uraUgx)} (USD ${NumberFormat('#,##0.00').format(rateTax == 0 ? 0 : uraUgx / rateTax)})');
+    } else {
+      buffer.writeln('URA Taxes: Not included');
+    }
+    if (_includePhaseTwo) {
+      buffer.writeln('Number Plates: UGX ${NumberFormat('#,##0.00').format(plates)}');
+      buffer.writeln('3rd Party Insurance: UGX ${NumberFormat('#,##0.00').format(insurance)}');
+      buffer.writeln('Agency Fees: UGX ${NumberFormat('#,##0.00').format(agent)}');
+    } else {
+      buffer.writeln('Number Plates: Not selected');
+      buffer.writeln('3rd Party Insurance: Not selected');
+      buffer.writeln('Agency Fees: Not selected');
+    }
+    buffer.writeln('Registration Process: UGX ${NumberFormat('#,##0.00').format(registrationProcess)}');
     buffer.writeln('');
     
     // Tax Breakdown
     if (_taxResult != null) {
+      final rateTax = double.tryParse(_exchangeRateController.text) ?? 0.0;
+      final cv = (_selectedCifUSD ?? 0.0) * rateTax;
+      final idf = cv * 0.01;
+      final importDutyPct = _selectedVehicleClass == 'Car'
+          ? 25.0
+          : (double.tryParse(_importDutyPctController.text) ?? 25.0);
+      final importDuty = cv * (importDutyPct / 100.0);
+      final vat = (cv + importDuty) * 0.18;
+      final wht = cv * 0.06;
+      final infra = cv * 0.015;
+      final envPct = _selectedVehicleClass == 'Car'
+          ? 50.0
+          : (double.tryParse(_envLevyPctController.text) ?? 50.0);
+      final envLevy = _isEnvironmentalLevyApplicable() ? cv * (envPct / 100.0) : 0.0;
+      // Tax breakdown is INDEPENDENT of Phase 2 - always save the actual calculated values
+      // Phase 2 only affects whether Number Plates, Insurance, and Agent Fees are included
+
       buffer.writeln('=== TAX BREAKDOWN ===');
-      buffer.writeln('Import Duty: ${_taxResult!.importDuty.toStringAsFixed(2)} UGX');
-      buffer.writeln('VAT: ${_taxResult!.vatAmount.toStringAsFixed(2)} UGX');
-      buffer.writeln('Withholding Tax: ${_taxResult!.whtAmount.toStringAsFixed(2)} UGX');
-      buffer.writeln('Environmental Levy: ${_taxResult!.environmentalLevy.toStringAsFixed(2)} UGX');
-      buffer.writeln('Infrastructure Levy: ${_taxResult!.infrastructureLevy.toStringAsFixed(2)} UGX');
+      buffer.writeln('Customs Value (CV): ${cv.toStringAsFixed(2)} UGX');
+      buffer.writeln('Import Declaration (IDF): ${idf.toStringAsFixed(2)} UGX');
+      buffer.writeln('Import Duty: ${importDuty.toStringAsFixed(2)} UGX');
+      buffer.writeln('VAT (18%): ${vat.toStringAsFixed(2)} UGX');
+      buffer.writeln('Withholding Tax: ${wht.toStringAsFixed(2)} UGX');
+      buffer.writeln('Environmental Levy: ${envLevy.toStringAsFixed(2)} UGX');
+      buffer.writeln('Infrastructure Levy: ${infra.toStringAsFixed(2)} UGX');
       buffer.writeln('Excise Duty: ${_taxResult!.exciseDuty.toStringAsFixed(2)} UGX');
       buffer.writeln('Vehicle Category: ${_taxResult!.vehicleCategory}');
-      buffer.writeln('Sheet Used: ${_taxResult!.sheetUsed}');
+      // Determine sheet used based on actual environmental levy: if > 0, "with surcharge", else "without surcharge"
+      // Tax breakdown is now always calculated (independent of Phase 2), so just check envLevy
+      final String sheetUsedValue = envLevy > 0 ? 'with surcharge' : 'without surcharge';
+      buffer.writeln('Sheet Used: $sheetUsedValue');
       buffer.writeln('');
     }
     
@@ -1323,18 +1613,27 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     return buffer.toString();
   }
 
-  void _showSuccessDialog() {
+  void _showSuccessDialog({required bool isUpdate}) {
+    final isQuotation = widget.type == InvoiceType.quotation;
+    final title = isUpdate
+        ? (isQuotation ? 'Quotation Updated' : 'Invoice Updated')
+        : (isQuotation ? 'Quotation Created' : 'Invoice Created');
+    final body = isUpdate
+        ? (isQuotation
+            ? 'Your quotation has been updated successfully!'
+            : 'Your invoice has been updated successfully!')
+        : (isQuotation
+            ? 'Your quotation has been created successfully!'
+            : 'Your invoice has been created successfully!');
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(
-          widget.type == InvoiceType.quotation ? 'Quotation Created' : 'Invoice Created',
+          title,
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
         ),
         content: Text(
-          widget.type == InvoiceType.quotation 
-            ? 'Your quotation has been created successfully!'
-            : 'Your invoice has been created successfully!',
+          body,
           style: GoogleFonts.poppins(),
         ),
         actions: [
@@ -1578,6 +1877,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                                   // Reset to 0 when unticked
                                   _cfMombasaController.text = '0';
                                 }
+                                _applyPhaseTwoDefaultFromSelections();
                               });
                             },
                             title: Text('C&F Mombasa', style: GoogleFonts.poppins(color: Colors.white, fontSize: 12)),
@@ -1619,6 +1919,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                                   // Reset to 0 when unticked
                                   _clearanceMsaToKlaController.text = '0';
                                 }
+                                _applyPhaseTwoDefaultFromSelections();
                               });
                             },
                             title: Text('Clearance', style: GoogleFonts.poppins(color: Colors.white, fontSize: 12)),
@@ -1660,6 +1961,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                                   // Reset to 0 when unticked
                                   _cfKampalaController.text = '0';
                                 }
+                                _applyPhaseTwoDefaultFromSelections();
                               });
                             },
                             title: Text('C&F Kampala', style: GoogleFonts.poppins(color: Colors.white, fontSize: 12)),
@@ -1673,6 +1975,64 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: CheckboxListTile(
+                        value: _includePhaseTwo,
+                        onChanged: (v) {
+                          setState(() {
+                            _setPhaseTwoInclusion(v ?? false);
+                          });
+                        },
+                        title: Text(
+                          'Phase 2',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Include settlement in calculation and PDF',
+                          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
+                        ),
+                        controlAffinity: ListTileControlAffinity.leading,
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: CheckboxListTile(
+                        value: _includeTaxToUra,
+                        onChanged: (v) {
+                          setState(() {
+                            _includeTaxToUra = v ?? true;
+                          });
+                        },
+                        title: Text(
+                          'Include tax to URA',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Include URA taxes in invoice (untick to exclude)',
+                          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
+                        ),
+                        controlAffinity: ListTileControlAffinity.leading,
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
                 // Cost breakdown table
                 Table(
                   columnWidths: const {
@@ -1827,29 +2187,96 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                     ),
                     TableRow(
                       children: [
-                        _buildTableCell(Text('Exchange Rate (UGX/USD)', style: GoogleFonts.poppins(color: Colors.white70))),
+                        _buildTableCell(
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Exchange Rate (UGX/USD)', style: GoogleFonts.poppins(color: Colors.white70)),
+                              const SizedBox(height: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: _isExchangeRatePhase1Locked 
+                                      ? Colors.orange.withOpacity(0.2) 
+                                      : Colors.green.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: _isExchangeRatePhase1Locked ? Colors.orange : Colors.green,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _isExchangeRatePhase1Locked ? Icons.lock : Icons.lock_open,
+                                      size: 12,
+                                      color: _isExchangeRatePhase1Locked ? Colors.orange : Colors.green,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      _isExchangeRatePhase1Locked ? 'Locked' : 'Unlocked',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w500,
+                                        color: _isExchangeRatePhase1Locked ? Colors.orange : Colors.green,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         _buildTableCell(Text('1.00', style: GoogleFonts.poppins(color: Colors.white))),
                         _buildTableCell(
-                          TextFormField(
-                            controller: _exchangeRatePhase1Controller,
-                            style: GoogleFonts.poppins(color: Colors.white),
-                            keyboardType: TextInputType.number,
-                            onChanged: (value) {
-                              setState(() {
-                                // Trigger rebuild to update all UGX displays
-                              });
-                            },
-                            decoration: InputDecoration(
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _exchangeRatePhase1Controller,
+                                  enabled: !_isExchangeRatePhase1Locked,
+                                  style: GoogleFonts.poppins(
+                                    color: _isExchangeRatePhase1Locked 
+                                        ? Colors.white.withOpacity(0.6) 
+                                        : Colors.white,
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                  onChanged: (value) {
+                                    setState(() {
+                                      // Trigger rebuild to update all UGX displays
+                                    });
+                                  },
+                                  decoration: InputDecoration(
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                                    ),
+                                    disabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  ),
+                                ),
                               ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                icon: Icon(
+                                  _isExchangeRatePhase1Locked ? Icons.lock : Icons.lock_open,
+                                  color: _isExchangeRatePhase1Locked ? Colors.orange : Colors.green,
+                                  size: 20,
+                                ),
+                                tooltip: _isExchangeRatePhase1Locked ? 'Unlock to edit' : 'Lock to prevent changes',
+                                onPressed: _toggleExchangeRatePhase1Lock,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
                               ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            ),
+                            ],
                           ),
                         ),
                       ],
@@ -1886,9 +2313,12 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
 
   Widget _buildPhaseTwoSettlementTable() {
     // Get values from controllers
-    final plates = double.tryParse(_numberPlateController.text) ?? 714300.0;
-    final insurance = double.tryParse(_thirdPartyInsuranceController.text) ?? 0.0;
-    final agent = double.tryParse(_agentFeesController.text) ?? 400000.0;
+    final rawPlates = double.tryParse(_numberPlateController.text) ?? 714300.0;
+    final rawInsurance = double.tryParse(_thirdPartyInsuranceController.text) ?? 0.0;
+    final rawAgent = double.tryParse(_agentFeesController.text) ?? 400000.0;
+    final plates = _includePhaseTwo ? rawPlates : 0.0;
+    final insurance = _includePhaseTwo ? rawInsurance : 0.0;
+    final agent = _includePhaseTwo ? rawAgent : 0.0;
     
     // Calculate taxes payable to URA using the tax breakdown rate
 
@@ -1908,7 +2338,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     final wht = cv * 0.06;
     final infra = cv * 0.015;
     // Environmental Levy (aka Surcharge): dependent on year; percentage is 50% for Car, customizable for others
-    final isEnvYearApplicable = ((_selectedYear ?? 0) <= 2015);
+    final isEnvYearApplicable = _isEnvironmentalLevyApplicable();
     final envPct = _selectedVehicleClass == 'Car'
         ? 50.0
         : (double.tryParse(_envLevyPctController.text) ?? 50.0);
@@ -1916,7 +2346,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     final regFee = 1500000.0;
     final stamp = 18000.0;
     final regForm = 35000.0;
-    final uraTaxes = importDuty + vat + wht + envLevy + idf + infra + regFee + stamp + regForm;
+    final uraTaxes = _includePhaseTwo ? (importDuty + vat + wht + envLevy + idf + infra + regFee + stamp + regForm) : 0.0;
 
     // Registration Process = URA Taxes + Number Plate + 3rd Party Insurance + Agent Fees
     final regProcess = uraTaxes + plates + insurance + agent;
@@ -1986,6 +2416,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                         _buildTableCellRight(
                           TextFormField(
                             controller: _numberPlateController,
+                            enabled: _includePhaseTwo,
                             style: GoogleFonts.poppins(color: Colors.white),
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(
@@ -2014,6 +2445,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                         _buildTableCellRight(
                           TextFormField(
                             controller: _thirdPartyInsuranceController,
+                            enabled: _includePhaseTwo,
                             style: GoogleFonts.poppins(color: Colors.white),
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(
@@ -2042,6 +2474,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                         _buildTableCellRight(
                           TextFormField(
                             controller: _agentFeesController,
+                            enabled: _includePhaseTwo,
                             style: GoogleFonts.poppins(color: Colors.white),
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(
@@ -2189,17 +2622,22 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   }
 
   double _phaseTwoUraTaxesTotal() {
-    // Duplicate of Phase 2 UI computation to keep saved data identical
+    // When "Include tax to URA" is unticked, do not include URA taxes (default is ticked).
+    if (!_includeTaxToUra) return 0.0;
+    // Taxes to URA is INDEPENDENT of Phase 2 - calculate when included
     final cv = (_selectedCifUSD ?? 0.0) * (double.tryParse(_exchangeRateController.text) ?? 0.0);
+    if (cv == 0.0) return 0.0;
+    
     final idf = cv * 0.01;
     final importDutyPct2 = _selectedVehicleClass == 'Car'
         ? 25.0
         : (double.tryParse(_importDutyPctController.text) ?? 25.0);
     final importDuty = cv * (importDutyPct2 / 100.0);
     final vat = (cv + importDuty) * 0.18;
+    // Align with the in-app Invoice Details screen: WHT is computed on CV (CIF UGX) only.
     final wht = cv * 0.06;
     final infra = cv * 0.015;
-    final isEnvYearApplicable2 = ((_selectedYear ?? 0) <= 2015);
+    final isEnvYearApplicable2 = _isEnvironmentalLevyApplicable();
     final envPct2 = _selectedVehicleClass == 'Car'
         ? 50.0
         : (double.tryParse(_envLevyPctController.text) ?? 50.0);
@@ -2329,47 +2767,23 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                     ),
                     _buildTableHeader('Invoice Date'),
                     _buildTableCell(
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: _invoiceDateController,
-                              style: GoogleFonts.poppins(color: Colors.white),
-                              decoration: InputDecoration(
-                                hintText: 'YYYY-MM-DD (adjustable)',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                  borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                  borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              ),
-                              onTap: () => _selectInvoiceDate(),
-                              readOnly: true, // Use date picker instead of manual input
-                            ),
+                      TextFormField(
+                        controller: _invoiceDateController,
+                        style: GoogleFonts.poppins(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: 'Auto-set from current date',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
                           ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            onPressed: _isLoadingDate ? null : _refreshDates,
-                            icon: _isLoadingDate 
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.refresh, color: Colors.orange),
-                            tooltip: 'Refresh with internet date',
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
                           ),
-                          const SizedBox(width: 4),
-                          IconButton(
-                            onPressed: _selectInvoiceDate,
-                            icon: const Icon(Icons.calendar_today, color: Colors.orange),
-                            tooltip: 'Select invoice date',
-                          ),
-                        ],
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        readOnly: true,
+                        enableInteractiveSelection: false,
                       ),
                     ),
                   ],
@@ -2385,7 +2799,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                               controller: _dueDateController,
                               style: GoogleFonts.poppins(color: Colors.white),
                               decoration: InputDecoration(
-                                hintText: 'YYYY-MM-DD (adjustable)',
+                                hintText: 'YYYY-MM-DD (default: +5 working days)',
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
                                   borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
@@ -2410,29 +2824,56 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                       ),
                     ),
                     _buildTableHeader('Status'),
-                    _buildTableCell(
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.orange.withOpacity(0.5)),
-                        ),
-                        child: Text(
-                          'Draft',
-                          style: GoogleFonts.poppins(
-                            color: Colors.orange,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
+                    _buildTableCell(_buildInvoiceStatusBadge()),
                   ],
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Invoice status chip on the form (draft / sent / …, or Final when PDF-locked).
+  Widget _buildInvoiceStatusBadge() {
+    final fin = widget.invoice?.isFinalized == true;
+    final st = widget.invoice?.status ?? InvoiceStatus.draft;
+    String label;
+    Color fg;
+    Color bg;
+    if (fin) {
+      label = 'Final';
+      fg = Colors.tealAccent;
+      bg = Colors.teal;
+    } else {
+      label = st.name;
+      if (label.isNotEmpty) {
+        label = label[0].toUpperCase() + label.substring(1);
+      }
+      fg = Colors.orange;
+      bg = Colors.orange;
+      if (st == InvoiceStatus.sent) {
+        fg = Colors.lightBlueAccent;
+        bg = Colors.blue;
+      } else if (st == InvoiceStatus.paid) {
+        fg = Colors.lightGreenAccent;
+        bg = Colors.green;
+      }
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: bg.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: bg.withOpacity(0.5)),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.poppins(
+          color: fg,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -2514,6 +2955,8 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                         style: GoogleFonts.poppins(color: Colors.white),
                         keyboardType: TextInputType.emailAddress,
                         decoration: InputDecoration(
+                          hintText: 'N/A',
+                          hintStyle: GoogleFonts.poppins(color: Colors.white54),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
                             borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
@@ -2556,6 +2999,8 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                         style: GoogleFonts.poppins(color: Colors.white),
                         maxLines: 2,
                         decoration: InputDecoration(
+                          hintText: 'N/A',
+                          hintStyle: GoogleFonts.poppins(color: Colors.white54),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
                             borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
@@ -2752,20 +3197,52 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                         ),
                         _buildTableHeader('Model'),
                         _buildTableCell(
-                          TextFormField(
-                            controller: TextEditingController(text: _selectedModel ?? ''),
-                            style: GoogleFonts.poppins(color: Colors.white),
-                            decoration: InputDecoration(
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                          Row(
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: TextFormField(
+                                  controller: _modelController,
+                                  style: GoogleFonts.poppins(color: Colors.white),
+                                  decoration: InputDecoration(
+                                    hintText: 'e.g. 120i',
+                                    hintStyle: GoogleFonts.poppins(color: Colors.white38, fontSize: 12),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  ),
+                                ),
                               ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                child: Text(' / ', style: GoogleFonts.poppins(color: Colors.white70)),
                               ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            ),
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _modelSuffixController,
+                                  style: GoogleFonts.poppins(color: Colors.white),
+                                  decoration: InputDecoration(
+                                    hintText: 'Optional',
+                                    hintStyle: GoogleFonts.poppins(color: Colors.white38, fontSize: 12),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -2977,7 +3454,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                                     setState(() {
                                       _selectedVehicleClass = newValue;
                                       // When switching class, set default Environmental (Surcharge) % by year
-                                      final isYearApplicable = (_selectedYear ?? 0) <= 2015;
+                                      final isYearApplicable = _isEnvironmentalLevyApplicable();
                                       _envLevyPctController.text = isYearApplicable ? '50' : '0';
                                     });
                                   }
@@ -3226,8 +3703,8 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
               ),
             ),
             
-            // S/N Verification Section (appears after CIF is calculated)
-            if (_selectedCifUSD != null) ...[
+            // S/N Verification: only when editing an existing invoice (hidden while creating new).
+            if (_selectedCifUSD != null && widget.invoice != null) ...[
               const SizedBox(height: 16),
               _buildSNVerificationSection(),
             ],
@@ -3364,7 +3841,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                   _selectedTonnage = null;
                 }
                 // Default Environmental (Surcharge) % based on year whenever class changes
-                final isYearApplicable = (_selectedYear ?? 0) <= 2015;
+                final isYearApplicable = _isEnvironmentalLevyApplicable();
                 _envLevyPctController.text = isYearApplicable ? '50' : '0';
               });
               _calculateTax();
@@ -3479,7 +3956,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     final importDuty = cv * (importDutyPct3 / 100.0);
     final wht = cv * 0.06;
     final infra = cv * 0.015;
-    final isEnvLevyApplicable = (_selectedYear ?? 0) <= 2015;
+    final isEnvLevyApplicable = _isEnvironmentalLevyApplicable();
     final envPct3 = _selectedVehicleClass == 'Car'
         ? 50.0
         : (double.tryParse(_envLevyPctController.text) ?? 50.0);
@@ -3561,13 +4038,50 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Exchange Rate for Tax Calculation',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white70,
-                        ),
+                      Row(
+                        children: [
+                          Text(
+                            'Exchange Rate for Tax Calculation',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: _isExchangeRateLocked 
+                                  ? Colors.orange.withOpacity(0.2) 
+                                  : Colors.green.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: _isExchangeRateLocked ? Colors.orange : Colors.green,
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _isExchangeRateLocked ? Icons.lock : Icons.lock_open,
+                                  size: 14,
+                                  color: _isExchangeRateLocked ? Colors.orange : Colors.green,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _isExchangeRateLocked ? 'Locked' : 'Unlocked',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: _isExchangeRateLocked ? Colors.orange : Colors.green,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 8),
                       Row(
@@ -3575,7 +4089,12 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                           Expanded(
                             child: TextFormField(
                               controller: _exchangeRateController,
-                              style: GoogleFonts.poppins(color: Colors.white),
+                              enabled: !_isExchangeRateLocked,
+                              style: GoogleFonts.poppins(
+                                color: _isExchangeRateLocked 
+                                    ? Colors.white.withOpacity(0.6) 
+                                    : Colors.white,
+                              ),
                               keyboardType: const TextInputType.numberWithOptions(decimal: true),
                               decoration: InputDecoration(
                                 labelText: 'UGX per USD',
@@ -3590,6 +4109,10 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                                   borderRadius: BorderRadius.circular(8),
                                   borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
                                 ),
+                                disabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+                                ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
                                   borderSide: BorderSide(color: Colors.orange),
@@ -3597,6 +4120,16 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
                               ),
                             ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: Icon(
+                              _isExchangeRateLocked ? Icons.lock : Icons.lock_open,
+                              color: _isExchangeRateLocked ? Colors.orange : Colors.green,
+                              size: 24,
+                            ),
+                            tooltip: _isExchangeRateLocked ? 'Unlock to edit exchange rate' : 'Lock to prevent changes',
+                            onPressed: _toggleExchangeRateLock,
                           ),
                           const SizedBox(width: 12),
                           ElevatedButton.icon(
@@ -3615,107 +4148,116 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                // Tax breakdown table
-                Table(
-                  columnWidths: const {
-                    0: FlexColumnWidth(3),
-                    1: FlexColumnWidth(2),
-                  },
-                  children: [
-                    TableRow(
-                      children: [
-                        _buildTableHeader('Tax Component'),
-                        _buildTableCellRight(Text('UGX', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white))),
-                      ],
-                    ),
-                    TableRow(
-                      children: [
-                        _buildTableCell(Text('CIF', style: GoogleFonts.poppins(color: Colors.white70))),
-                        _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(cv)}', style: GoogleFonts.poppins(color: Colors.white))),
-                      ],
-                    ),
-                    TableRow(
-                      children: [
-                        _buildTableCell(Text('Import Declaration Fees (1%)', style: GoogleFonts.poppins(color: Colors.white70))),
-                        _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(idf)}', style: GoogleFonts.poppins(color: Colors.white))),
-                      ],
-                    ),
-                    TableRow(
-                      children: [
-                        _buildTableCell(Text('Import Duty ('
-                            '{${_selectedVehicleClass == 'Car' ? '25' : (_importDutyPctController.text.isEmpty ? '25' : _importDutyPctController.text)}%}'
-                            ')', style: GoogleFonts.poppins(color: Colors.white70))),
-                        _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(importDuty)}', style: GoogleFonts.poppins(color: Colors.white))),
-                      ],
-                    ),
-                    TableRow(
-                      children: [
-                        _buildTableCell(Text('VAT (18%)', style: GoogleFonts.poppins(color: Colors.white70))),
-                        _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(vat)}', style: GoogleFonts.poppins(color: Colors.white))),
-                      ],
-                    ),
-                    TableRow(
-                      children: [
-                        _buildTableCell(Text('WHT (6%)', style: GoogleFonts.poppins(color: Colors.white70))),
-                        _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(wht)}', style: GoogleFonts.poppins(color: Colors.white))),
-                      ],
-                    ),
-                    TableRow(
-                      children: [
-                        _buildTableCell(Text('Infrastructure Levy (1.5%)', style: GoogleFonts.poppins(color: Colors.white70))),
-                        _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(infra)}', style: GoogleFonts.poppins(color: Colors.white))),
-                      ],
-                    ),
-                    if (isEnvLevyApplicable)
+                if (_includeTaxToUra) ...[
+                  const SizedBox(height: 16),
+                  // Tax breakdown table
+                  Table(
+                    columnWidths: const {
+                      0: FlexColumnWidth(3),
+                      1: FlexColumnWidth(2),
+                    },
+                    children: [
                       TableRow(
                         children: [
-                          _buildTableCell(Text('Environmental Levy ('
-                              '{${_selectedVehicleClass == 'Car' ? '50' : (_envLevyPctController.text.isEmpty ? '50' : _envLevyPctController.text)}%}'
-                              ')', style: GoogleFonts.poppins(color: Colors.white70))),
-                          _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(envLevy)}', style: GoogleFonts.poppins(color: Colors.white))),
+                          _buildTableHeader('Tax Component'),
+                          _buildTableCellRight(Text('UGX', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white))),
                         ],
                       ),
-                    TableRow(
-                      children: [
-                        _buildTableCell(Text('Registration Fee', style: GoogleFonts.poppins(color: Colors.white70))),
-                        _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(regFee)}', style: GoogleFonts.poppins(color: Colors.white))),
-                      ],
-                    ),
-                    TableRow(
-                      children: [
-                        _buildTableCell(Text('Stamp Duty', style: GoogleFonts.poppins(color: Colors.white70))),
-                        _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(stamp)}', style: GoogleFonts.poppins(color: Colors.white))),
-                      ],
-                    ),
-                    TableRow(
-                      children: [
-                        _buildTableCell(Text('Registration Form', style: GoogleFonts.poppins(color: Colors.white70))),
-                        _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(regForm)}', style: GoogleFonts.poppins(color: Colors.white))),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                // Total
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.green.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Total Taxes & Fees', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                      Text(
-                        'UGX ${NumberFormat('#,##0.00').format(totalTaxes)}',
-                        style: GoogleFonts.poppins(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 16),
+                      TableRow(
+                        children: [
+                          _buildTableCell(Text('CIF', style: GoogleFonts.poppins(color: Colors.white70))),
+                          _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(cv)}', style: GoogleFonts.poppins(color: Colors.white))),
+                        ],
+                      ),
+                      TableRow(
+                        children: [
+                          _buildTableCell(Text('Import Declaration Fees (1%)', style: GoogleFonts.poppins(color: Colors.white70))),
+                          _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(idf)}', style: GoogleFonts.poppins(color: Colors.white))),
+                        ],
+                      ),
+                      TableRow(
+                        children: [
+                          _buildTableCell(Text('Import Duty ('
+                              '{${_selectedVehicleClass == 'Car' ? '25' : (_importDutyPctController.text.isEmpty ? '25' : _importDutyPctController.text)}%}'
+                              ')', style: GoogleFonts.poppins(color: Colors.white70))),
+                          _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(importDuty)}', style: GoogleFonts.poppins(color: Colors.white))),
+                        ],
+                      ),
+                      TableRow(
+                        children: [
+                          _buildTableCell(Text('VAT (18%)', style: GoogleFonts.poppins(color: Colors.white70))),
+                          _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(vat)}', style: GoogleFonts.poppins(color: Colors.white))),
+                        ],
+                      ),
+                      TableRow(
+                        children: [
+                          _buildTableCell(Text('WHT (6%)', style: GoogleFonts.poppins(color: Colors.white70))),
+                          _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(wht)}', style: GoogleFonts.poppins(color: Colors.white))),
+                        ],
+                      ),
+                      TableRow(
+                        children: [
+                          _buildTableCell(Text('Infrastructure Levy (1.5%)', style: GoogleFonts.poppins(color: Colors.white70))),
+                          _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(infra)}', style: GoogleFonts.poppins(color: Colors.white))),
+                        ],
+                      ),
+                      if (isEnvLevyApplicable)
+                        TableRow(
+                          children: [
+                            _buildTableCell(Text('Environmental Levy ('
+                                '{${_selectedVehicleClass == 'Car' ? '50' : (_envLevyPctController.text.isEmpty ? '50' : _envLevyPctController.text)}%}'
+                                ')', style: GoogleFonts.poppins(color: Colors.white70))),
+                            _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(envLevy)}', style: GoogleFonts.poppins(color: Colors.white))),
+                          ],
+                        ),
+                      TableRow(
+                        children: [
+                          _buildTableCell(Text('Registration Fee', style: GoogleFonts.poppins(color: Colors.white70))),
+                          _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(regFee)}', style: GoogleFonts.poppins(color: Colors.white))),
+                        ],
+                      ),
+                      TableRow(
+                        children: [
+                          _buildTableCell(Text('Stamp Duty', style: GoogleFonts.poppins(color: Colors.white70))),
+                          _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(stamp)}', style: GoogleFonts.poppins(color: Colors.white))),
+                        ],
+                      ),
+                      TableRow(
+                        children: [
+                          _buildTableCell(Text('Registration Form', style: GoogleFonts.poppins(color: Colors.white70))),
+                          _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(regForm)}', style: GoogleFonts.poppins(color: Colors.white))),
+                        ],
                       ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 16),
+                  // Total
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Total Taxes & Fees', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                        Text(
+                          'UGX ${NumberFormat('#,##0.00').format(totalTaxes)}',
+                          style: GoogleFonts.poppins(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    'URA taxes are excluded for this invoice.\nTax components are not calculated.',
+                    style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ],
             ),
           ),
@@ -3876,6 +4418,8 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                       _vehicleDescriptionController.clear();
                       _selectedMake = null;
                       _selectedModel = null;
+                      _modelController.clear();
+                      _modelSuffixController.clear();
                       _selectedYear = null;
                       _selectedEngineCC = null;
                       _selectedCifUSD = null;
@@ -4033,7 +4577,8 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
 
   // Quick Actions Methods
   void _previewInvoice() async {
-    if (_selectedMake == null || _selectedModel == null || _selectedYear == null || _selectedCifUSD == null) {
+    final hasModel = (_selectedModel?.isNotEmpty ?? false) || _modelController.text.trim().isNotEmpty;
+    if (_selectedMake == null || !hasModel || _selectedYear == null || _selectedCifUSD == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please select a vehicle and calculate tax before previewing'),
@@ -4082,9 +4627,9 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     }
     
     // Gather phase two inputs
-    final plates = double.tryParse(_numberPlateController.text) ?? 714300.0;
-    final insurance = double.tryParse(_thirdPartyInsuranceController.text) ?? 0.0;
-    final agent = double.tryParse(_agentFeesController.text) ?? 400000.0;
+    final plates = _includePhaseTwo ? (double.tryParse(_numberPlateController.text) ?? 714300.0) : 0.0;
+    final insurance = _includePhaseTwo ? (double.tryParse(_thirdPartyInsuranceController.text) ?? 0.0) : 0.0;
+    final agent = _includePhaseTwo ? (double.tryParse(_agentFeesController.text) ?? 400000.0) : 0.0;
     final uraTaxes = _phaseTwoUraTaxesTotal();
     final secondInstallment = uraTaxes + plates + insurance + agent;
 
@@ -4103,11 +4648,14 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       id: widget.invoice?.id,
       invoiceNumber: previewInvoiceNumber,
       invoiceDate: DateTime.tryParse(_invoiceDateController.text) ?? DateTime.now(),
-      dueDate: DateTime.tryParse(_dueDateController.text) ?? DateTime.now().add(const Duration(days: 30)),
+      dueDate: DateTime.tryParse(_dueDateController.text) ??
+          _addWorkingDays(DateTime.tryParse(_invoiceDateController.text) ?? DateTime.now(), 5),
+      status: widget.invoice?.status ?? InvoiceStatus.draft,
       customerId: customer?.id ?? 0,
       customer: customer,
       vehicleMake: _selectedMake ?? '',
-      vehicleModel: _selectedModel ?? '',
+      vehicleModel: _modelController.text.trim().isEmpty ? (_selectedModel ?? '') : _modelController.text.trim(),
+      vehicleModelSuffix: _modelSuffixController.text.trim(),
       vehicleYear: _selectedYear ?? 0,
       chassisNo: _chassisNoController.text.trim(),
       engineSize: _selectedEngineCC?.toString() ?? '',
@@ -4125,8 +4673,11 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       secondInstallmentUGX: secondInstallment,
       items: items,
       totalAmount: _calculateTotalAmount(),
+      paidAmount: widget.invoice?.paidAmount ?? 0.0,
       notes: finalNotes,
-      invoiceType: widget.type == InvoiceType.quotation ? InvoiceType.carSale : InvoiceType.invoice,
+      invoiceType: widget.invoice?.invoiceType ??
+          (widget.type == InvoiceType.quotation ? InvoiceType.carSale : InvoiceType.invoice),
+      isFinalized: widget.invoice?.isFinalized ?? false,
     );
   }
 
@@ -4155,33 +4706,21 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
 
   double _calculateTotalAmount() {
     if (_selectedCifUSD == null) return 0.0;
-    
-    final exchangeRate = double.tryParse(_exchangeRateController.text) ?? 3834.56;
-    final cifUgx = _selectedCifUSD! * exchangeRate;
-    
-    // Add tax if calculated
-    double totalTax = 0.0;
-    if (_taxResult != null) {
-      totalTax = _taxResult!.totalTaxUGX;
+
+    // IMPORTANT:
+    // CIF is a reference-only value used for URA tax computation and must NOT be included in totals.
+    // Keep totals aligned with saved invoice totals: sum billable line items (excluding CIF reference item).
+    final items = _buildInvoiceItems();
+    bool isCifReference(InvoiceItem item) {
+      final name = item.productName.trim().toLowerCase();
+      final desc = item.description.trim().toLowerCase();
+      return name.startsWith('cif') && desc.contains('reference');
     }
-    
-    // Add fees
-    final cfMombasa = double.tryParse(_cfMombasaController.text) ?? 0.0;
-    final clearanceMsaToKla = double.tryParse(_clearanceMsaToKlaController.text) ?? 0.0;
-    final cfKampala = double.tryParse(_cfKampalaController.text) ?? 0.0;
-    final ttUgx = (_selectedCifUSD! * 40) * exchangeRate; // TT calculation
-    final numberPlate = double.tryParse(_numberPlateController.text) ?? 714300.0;
-    final thirdPartyInsurance = double.tryParse(_thirdPartyInsuranceController.text) ?? 0.0;
-    final agentFees = double.tryParse(_agentFeesController.text) ?? 400000.0;
-    final registrationProcess = double.tryParse(_registrationProcessController.text) ?? 2667300.0;
-    final registrationFee = double.tryParse(_registrationFeeController.text) ?? 1500000.0;
-    final idf = double.tryParse(_idfController.text) ?? 0.0;
-    final infrastructureLevy = double.tryParse(_infrastructureLevyController.text) ?? 0.0;
-    final stampDuty = double.tryParse(_stampDutyController.text) ?? 18000.0;
-    final regForm = double.tryParse(_regFormController.text) ?? 35000.0;
-    
-    return cifUgx + totalTax + cfMombasa + clearanceMsaToKla + cfKampala + ttUgx + 
-           numberPlate + thirdPartyInsurance + agentFees + registrationProcess + 
-           registrationFee + idf + infrastructureLevy + stampDuty + regForm;
+
+    double total = 0.0;
+    for (final item in items.where((i) => !isCifReference(i))) {
+      total += item.lineTotal;
+    }
+    return total;
   }
 }

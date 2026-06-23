@@ -43,7 +43,7 @@ class _ScanClientScreenState extends State<ScanClientScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Invalid QR: $e', style: GoogleFonts.poppins()), backgroundColor: Colors.red),
+        SnackBar(content: Text('Invalid QR: $e', style: GoogleFonts.plusJakartaSans()), backgroundColor: Colors.red),
       );
     } finally {
       _processing = false;
@@ -55,7 +55,7 @@ class _ScanClientScreenState extends State<ScanClientScreen> {
     if (_deviceId == null) return;
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Enter client name', style: GoogleFonts.poppins()), backgroundColor: Colors.orange),
+        SnackBar(content: Text('Enter client name', style: GoogleFonts.plusJakartaSans()), backgroundColor: Colors.orange),
       );
       return;
     }
@@ -67,7 +67,7 @@ class _ScanClientScreenState extends State<ScanClientScreen> {
     } else {
       setState(() => _approved = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to approve client', style: GoogleFonts.poppins()), backgroundColor: Colors.red),
+        SnackBar(content: Text('Failed to approve client', style: GoogleFonts.plusJakartaSans()), backgroundColor: Colors.red),
       );
     }
   }
@@ -83,7 +83,7 @@ class _ScanClientScreenState extends State<ScanClientScreen> {
               alignment: Alignment.centerLeft,
               child: Text(
                 'Scan Desktop QR',
-                style: GoogleFonts.poppins(color: Colors.white),
+                style: GoogleFonts.plusJakartaSans(color: Colors.white),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -111,14 +111,14 @@ class _ScanClientScreenState extends State<ScanClientScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('Device: $_deviceId', style: GoogleFonts.poppins(color: Colors.white70)),
+                  Text('Device: $_deviceId', style: GoogleFonts.plusJakartaSans(color: Colors.white70)),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _nameController,
-                    style: GoogleFonts.poppins(color: Colors.white),
+                    style: GoogleFonts.plusJakartaSans(color: Colors.white),
                     decoration: InputDecoration(
                       labelText: 'Client Name (admin sets)',
-                      labelStyle: GoogleFonts.poppins(color: Colors.white70),
+                      labelStyle: GoogleFonts.plusJakartaSans(color: Colors.white70),
                       enabledBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.white30)),
                       focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.white70)),
                     ),

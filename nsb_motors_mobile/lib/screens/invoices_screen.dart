@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
-import 'package:flutter/services.dart';
 import 'dart:io';
 import '../services/local_database_service.dart';
 import '../services/invoice_sync_service.dart';
@@ -17,13 +17,17 @@ class InvoicesScreen extends StatefulWidget {
 class _InvoicesScreenState extends State<InvoicesScreen> {
   final LocalDatabaseService _localDb = LocalDatabaseService();
   final InvoiceSyncService _syncService = InvoiceSyncService();
-  
+
   List<Map<String, dynamic>> _invoices = [];
   bool _isLoading = true;
   bool _isSyncing = false;
   String _searchQuery = '';
-  String? _selectedClientId;
-  String _selectedStatus = 'all'; // all, created, sent, paid
+  String _selectedStatus = 'all';
+
+  static const _primary = Color(0xFF1D4ED8);
+  static const _textPrimary = Color(0xFF0F172A);
+  static const _textSecondary = Color(0xFF64748B);
+  static const _bgColor = Color(0xFFF8FAFC);
 
   @override
   void initState() {
@@ -32,10 +36,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   }
 
   Future<void> _loadInvoices() async {
-    setState(() {
-      _isLoading = true;
-    });
-
+    setState(() => _isLoading = true);
     try {
       final invoices = await _localDb.getAllInvoices();
       setState(() {
@@ -43,579 +44,73 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      print('❌ Error loading invoices: $e');
-      setState(() {
-        _isLoading = false;
-      });
+      debugPrint('❌ Error loading invoices: $e');
+      setState(() => _isLoading = false);
     }
   }
 
   Future<void> _syncInvoices() async {
     if (_isSyncing) return;
-
-    setState(() {
-      _isSyncing = true;
-    });
-
+    setState(() => _isSyncing = true);
     try {
       final count = await _syncService.syncAllInvoices();
-      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              count > 0 
-                ? '✅ Synced $count invoice(s)'
-                : '✅ No new invoices to sync',
-              style: GoogleFonts.poppins(),
-            ),
-            backgroundColor: const Color(0xFF2D3748),
-            duration: const Duration(seconds: 2),
+            content: Text(count > 0 ? 'Synced $count invoice(s)' : 'No new invoices to sync'),
+            backgroundColor: const Color(0xFF059669),
           ),
         );
       }
-
-      // Reload invoices after sync
       await _loadInvoices();
     } catch (e) {
-      print('❌ Error syncing invoices: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              '❌ Error syncing invoices: $e',
-              style: GoogleFonts.poppins(),
-            ),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
+            content: Text('Error syncing: $e'),
+            backgroundColor: const Color(0xFFDC2626),
           ),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isSyncing = false;
-        });
-      }
+      if (mounted) setState(() => _isSyncing = false);
     }
   }
 
   List<Map<String, dynamic>> get _filteredInvoices {
     var filtered = _invoices;
-
-    // Filter by search query
     if (_searchQuery.isNotEmpty) {
-      filtered = filtered.where((invoice) {
-        final invoiceNumber = (invoice['invoice_number'] ?? '').toString().toLowerCase();
-        final customerName = (invoice['customer_name'] ?? '').toString().toLowerCase();
-        return invoiceNumber.contains(_searchQuery.toLowerCase()) ||
-               customerName.contains(_searchQuery.toLowerCase());
+      filtered = filtered.where((inv) {
+        final num = (inv['invoice_number'] ?? '').toString().toLowerCase();
+        final name = (inv['customer_name'] ?? '').toString().toLowerCase();
+        return num.contains(_searchQuery.toLowerCase()) ||
+            name.contains(_searchQuery.toLowerCase());
       }).toList();
     }
-
-    // Filter by client
-    if (_selectedClientId != null && _selectedClientId!.isNotEmpty) {
-      filtered = filtered.where((invoice) {
-        return invoice['client_id']?.toString() == _selectedClientId;
-      }).toList();
-    }
-
-    // Filter by status
     if (_selectedStatus != 'all') {
-      filtered = filtered.where((invoice) {
-        return invoice['status']?.toString().toLowerCase() == _selectedStatus.toLowerCase();
-      }).toList();
+      filtered = filtered
+          .where((inv) =>
+              inv['status']?.toString().toLowerCase() == _selectedStatus)
+          .toList();
     }
-
     return filtered;
   }
 
-  Future<void> _showInvoiceDetails(BuildContext context, Map<String, dynamic> invoice) async {
-    // Get client machine info
-    Map<String, dynamic>? clientInfo;
-    final clientId = invoice['client_id']?.toString();
-    if (clientId != null && clientId.isNotEmpty) {
-      try {
-        clientInfo = await SupabaseService.getDesktopClient(clientId);
-      } catch (e) {
-        print('⚠️ Error fetching client info: $e');
-      }
-    }
-
-    final hasPdf = invoice['local_pdf_path']?.toString().isNotEmpty ?? false;
-    final pdfPath = invoice['local_pdf_path']?.toString() ?? '';
-    final customerPhone = invoice['customer_phone']?.toString() ?? '';
-    final clientName = clientInfo?['client_name']?.toString() ?? 'Unknown Client';
-    final clientPhone = clientInfo?['phone']?.toString() ?? 
-                       clientInfo?['contact_phone']?.toString() ?? 
-                       'Not available';
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1A1F3A),
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => _InvoiceDetailSheet(
-        invoice: invoice,
-        clientName: clientName,
-        clientPhone: clientPhone,
-        customerPhone: customerPhone,
-        hasPdf: hasPdf,
-        pdfPath: pdfPath,
-        onViewPdf: () {
-          Navigator.pop(context);
-          _viewInvoicePdf(pdfPath);
-        },
-        onResendWhatsApp: () => _resendWhatsApp(invoice),
-        onResendEmail: () => _resendEmail(invoice),
-        onDelete: () {
-          Navigator.pop(context);
-          _deleteInvoice(invoice);
-        },
-      ),
-    );
-  }
-
-  void _viewInvoicePdf(String pdfPath) {
-    if (pdfPath.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'PDF file not available',
-            style: GoogleFonts.poppins(),
-          ),
-          backgroundColor: const Color(0xFF2D3748),
-        ),
-      );
-      return;
-    }
-
-    final file = File(pdfPath);
-    if (!file.existsSync()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'PDF file does not exist',
-            style: GoogleFonts.poppins(),
-          ),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1A1F3A),
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => _PdfViewerSheet(pdfPath: pdfPath),
-    );
-  }
-
-  Future<void> _resendWhatsApp(Map<String, dynamic> invoice) async {
-    final customerPhone = invoice['customer_phone']?.toString() ?? '';
-    if (customerPhone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Customer phone number is required',
-            style: GoogleFonts.poppins(),
-          ),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    final invoiceNumber = invoice['invoice_number']?.toString() ?? 'Unknown';
-    final customerName = invoice['customer_name']?.toString() ?? 'Customer';
-    final totalAmount = (invoice['total_amount'] as num?)?.toDouble() ?? 0.0;
-    final invoiceDate = _formatDate(invoice['invoice_date']?.toString());
-    final pdfUrl = invoice['pdf_url']?.toString();
-
-    // Generate invoice message
-    final message = _generateInvoiceMessage(
-      customerName: customerName,
-      invoiceNumber: invoiceNumber,
-      invoiceDate: invoiceDate,
-      totalAmount: totalAmount,
-    );
-
-    try {
-      final supabase = SupabaseService.client;
-      
-      // Queue WhatsApp message
-      await supabase.from('whatsapp_message_queue').insert({
-        'phone_number': customerPhone,
-        'message_content': message,
-        'message_type': 'invoice',
-        'media_path': pdfUrl,
-        'sent_by_machine_id': invoice['client_id']?.toString() ?? 'mobile_app',
-        'sent_by_user_id': 'mobile_user',
-        'sent_by_user_name': 'Mobile App User',
-        'status': 'pending',
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '✅ WhatsApp message queued. Mobile app will send it automatically.',
-              style: GoogleFonts.poppins(),
-            ),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    } catch (e) {
-      print('❌ Error queueing WhatsApp message: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '❌ Error queueing WhatsApp message: $e',
-              style: GoogleFonts.poppins(),
-            ),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _resendEmail(Map<String, dynamic> invoice) async {
-    // For email, we need customer email - check if it's stored
-    // For now, we'll show a message that email requires customer email address
-    final invoiceNumber = invoice['invoice_number']?.toString() ?? 'Unknown';
-    final customerName = invoice['customer_name']?.toString() ?? 'Customer';
-    final totalAmount = (invoice['total_amount'] as num?)?.toDouble() ?? 0.0;
-    final invoiceDate = _formatDate(invoice['invoice_date']?.toString());
-    final pdfUrl = invoice['pdf_url']?.toString();
-
-    // Show dialog to enter email address
-    final emailController = TextEditingController();
-    
-    if (!mounted) return;
-    
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1F3A),
-        title: Text(
-          'Resend Invoice via Email',
-          style: GoogleFonts.poppins(color: Colors.white),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Enter customer email address:',
-              style: GoogleFonts.poppins(color: Colors.white70),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: emailController,
-              style: GoogleFonts.poppins(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'customer@example.com',
-                hintStyle: GoogleFonts.poppins(color: Colors.white54),
-                filled: true,
-                fillColor: const Color(0xFF2D3748),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              keyboardType: TextInputType.emailAddress,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.poppins(color: Colors.white70),
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              if (emailController.text.isNotEmpty) {
-                Navigator.pop(context, emailController.text);
-              }
-            },
-            child: Text(
-              'Send',
-              style: GoogleFonts.poppins(color: const Color(0xFF667EEA)),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (result == null || result.isEmpty) return;
-
-    // Generate email body
-    final emailBody = _generateEmailBody(
-      customerName: customerName,
-      invoiceNumber: invoiceNumber,
-      invoiceDate: invoiceDate,
-      totalAmount: totalAmount,
-    );
-
-    try {
-      final supabase = SupabaseService.client;
-      
-      // Queue email
-      await supabase.from('email_queue').insert({
-        'to_email': result,
-        'subject': 'Invoice $invoiceNumber - NSB Motors',
-        'body': emailBody,
-        'pdf_url': pdfUrl,
-        'sent_by_machine_id': invoice['client_id']?.toString() ?? 'mobile_app',
-        'sent_by_user_id': 'mobile_user',
-        'sent_by_user_name': 'Mobile App User',
-        'status': 'pending',
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '✅ Email queued. Mobile app will send it automatically.',
-              style: GoogleFonts.poppins(),
-            ),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    } catch (e) {
-      print('❌ Error queueing email: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '❌ Error queueing email: $e',
-              style: GoogleFonts.poppins(),
-            ),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
-  }
-
-  String _generateInvoiceMessage({
-    required String customerName,
-    required String invoiceNumber,
-    required String invoiceDate,
-    required double totalAmount,
-  }) {
-    return '''
-🏢 *NSB Motors*
-📄 *Invoice $invoiceNumber*
-
-Dear $customerName,
-
-Your invoice is ready for payment:
-💰 Amount: ${_formatAmount(totalAmount)}
-📅 Date: $invoiceDate
-
-Thank you for your business!
-
-💳 *Payment Options:*
-• Bank Transfer
-• Mobile Money (MTN/Airtel)
-• Cash Payment
-
-Payment is due within 30 days.
-
-Best regards,
-NSB Motors Team
-    '''.trim();
-  }
-
-  Future<void> _deleteInvoice(Map<String, dynamic> invoice) async {
-    final invoiceNumber = invoice['invoice_number']?.toString() ?? 'Unknown';
-    final supabaseId = invoice['supabase_id']?.toString();
-    
-    if (supabaseId == null || supabaseId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Cannot delete invoice: Invalid invoice ID',
-            style: GoogleFonts.poppins(),
-          ),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    // Show confirmation dialog
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1F3A),
-        title: Text(
-          'Delete Invoice',
-          style: GoogleFonts.poppins(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        content: Text(
-          'Are you sure you want to delete invoice $invoiceNumber?\n\nThis action cannot be undone.',
-          style: GoogleFonts.poppins(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.poppins(color: Colors.white70),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(
-              'Delete',
-              style: GoogleFonts.poppins(color: Colors.red),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    try {
-      // Delete from local database
-      final localDb = LocalDatabaseService();
-      final result = await localDb.deleteInvoice(supabaseId);
-
-      if (result > 0) {
-        // Also delete local PDF file if exists
-        final pdfPath = invoice['local_pdf_path']?.toString();
-        if (pdfPath != null && pdfPath.isNotEmpty) {
-          try {
-            final file = File(pdfPath);
-            if (await file.exists()) {
-              await file.delete();
-            }
-          } catch (e) {
-            print('⚠️ Error deleting PDF file: $e');
-            // Continue even if PDF deletion fails
-          }
-        }
-
-        // Reload invoices
-        await _loadInvoices();
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '✅ Invoice deleted successfully',
-                style: GoogleFonts.poppins(),
-              ),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '⚠️ Invoice not found or already deleted',
-                style: GoogleFonts.poppins(),
-              ),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      print('❌ Error deleting invoice: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '❌ Error deleting invoice: $e',
-              style: GoogleFonts.poppins(),
-            ),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
-  }
-
-  String _generateEmailBody({
-    required String customerName,
-    required String invoiceNumber,
-    required String invoiceDate,
-    required double totalAmount,
-  }) {
-    return '''
-<!DOCTYPE html>
-<html>
-<head>
-  <style>
-    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-    .header { background-color: #667EEA; color: white; padding: 20px; text-align: center; }
-    .content { padding: 20px; }
-    .invoice-details { background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }
-    .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>NSB Motors</h1>
-    <h2>Invoice $invoiceNumber</h2>
-  </div>
-  <div class="content">
-    <p>Dear $customerName,</p>
-    <p>Your invoice is ready for payment:</p>
-    <div class="invoice-details">
-      <p><strong>Invoice Number:</strong> $invoiceNumber</p>
-      <p><strong>Date:</strong> $invoiceDate</p>
-      <p><strong>Amount:</strong> ${_formatAmount(totalAmount)}</p>
-    </div>
-    <p>Thank you for your business!</p>
-    <p>Payment is due within 30 days.</p>
-  </div>
-  <div class="footer">
-    <p>Best regards,<br>NSB Motors Team</p>
-  </div>
-</body>
-</html>
-    ''';
-  }
-
-  Color _getStatusColor(String status) {
+  Color _statusColor(String status) {
     switch (status.toLowerCase()) {
-      case 'sent':
-        return Colors.blue;
-      case 'paid':
-        return Colors.green;
-      case 'created':
-        return Colors.orange;
-      default:
-        return Colors.grey;
+      case 'sent': return const Color(0xFF3B82F6);
+      case 'paid': return const Color(0xFF059669);
+      case 'created': return const Color(0xFFD97706);
+      default: return const Color(0xFF6B7280);
+    }
+  }
+
+  Color _statusBg(String status) {
+    switch (status.toLowerCase()) {
+      case 'sent': return const Color(0xFFEFF6FF);
+      case 'paid': return const Color(0xFFECFDF5);
+      case 'created': return const Color(0xFFFFFBEB);
+      default: return const Color(0xFFF3F4F6);
     }
   }
 
@@ -640,28 +135,18 @@ NSB Motors Team
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: _bgColor,
       appBar: AppBar(
-        title: Text(
-          'Invoices',
-          style: GoogleFonts.poppins(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
+        title: const Text('Invoices'),
         actions: [
           IconButton(
             icon: _isSyncing
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.sync),
+                : const Icon(Icons.sync_rounded),
             onPressed: _isSyncing ? null : _syncInvoices,
             tooltip: 'Sync invoices',
           ),
@@ -669,335 +154,502 @@ NSB Motors Team
       ),
       body: Column(
         children: [
-          // Search and filter bar
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: const Color(0xFF2D3748),
-            child: Column(
-              children: [
-                // Search bar
-                TextField(
-                  style: GoogleFonts.poppins(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: 'Search invoices...',
-                    hintStyle: GoogleFonts.poppins(color: Colors.white54),
-                    prefixIcon: const Icon(Icons.search, color: Colors.white54),
-                    filled: true,
-                    fillColor: const Color(0xFF1A1F3A),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  ),
-                  onChanged: (value) {
-                    setState(() {
-                      _searchQuery = value;
-                    });
-                  },
-                ),
-                const SizedBox(height: 12),
-                // Status filter
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        value: _selectedStatus,
-                        decoration: InputDecoration(
-                          labelText: 'Status',
-                          labelStyle: GoogleFonts.poppins(color: Colors.white70),
-                          filled: true,
-                          fillColor: const Color(0xFF1A1F3A),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        ),
-                        dropdownColor: const Color(0xFF1A1F3A),
-                        style: GoogleFonts.poppins(color: Colors.white),
-                        items: ['all', 'created', 'sent', 'paid']
-                            .map((status) => DropdownMenuItem(
-                                  value: status,
-                                  child: Text(
-                                    status.toUpperCase(),
-                                    style: GoogleFonts.poppins(),
-                                  ),
-                                ))
-                            .toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedStatus = value ?? 'all';
-                          });
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          // Invoice count
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: const Color(0xFF2D3748),
-            child: Row(
-              children: [
-                Text(
-                  '${_filteredInvoices.length} invoice(s)',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white70,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Invoice list
-          Expanded(
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(),
-                  )
-                : _filteredInvoices.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.receipt_long,
-                              size: 64,
-                              color: Colors.white38,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No invoices found',
-                              style: GoogleFonts.poppins(
-                                color: Colors.white54,
-                                fontSize: 16,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Tap sync to fetch invoices from client machines',
-                              style: GoogleFonts.poppins(
-                                color: Colors.white38,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _filteredInvoices.length,
-                        itemBuilder: (context, index) {
-                          final invoice = _filteredInvoices[index];
-                          final status = invoice['status']?.toString() ?? 'unknown';
-                          final hasPdf = invoice['local_pdf_path']?.toString().isNotEmpty ?? false;
+          _buildSearchBar(),
+          _buildCountBar(),
+          Expanded(child: _buildList()),
+        ],
+      ),
+    );
+  }
 
-                          return Dismissible(
-                            key: Key(invoice['supabase_id']?.toString() ?? invoice['id'].toString()),
-                            direction: DismissDirection.endToStart,
-                            background: Container(
-                              alignment: Alignment.centerRight,
-                              padding: const EdgeInsets.only(right: 20),
-                              decoration: BoxDecoration(
-                                color: Colors.red,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(
-                                Icons.delete,
-                                color: Colors.white,
-                                size: 32,
-                              ),
-                            ),
-                            confirmDismiss: (direction) async {
-                              // Show confirmation dialog
-                              final confirm = await showDialog<bool>(
-                                context: context,
-                                builder: (context) => AlertDialog(
-                                  backgroundColor: const Color(0xFF1A1F3A),
-                                  title: Text(
-                                    'Delete Invoice',
-                                    style: GoogleFonts.poppins(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  content: Text(
-                                    'Are you sure you want to delete invoice ${invoice['invoice_number']}?\n\nThis action cannot be undone.',
-                                    style: GoogleFonts.poppins(color: Colors.white70),
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(context, false),
-                                      child: Text(
-                                        'Cancel',
-                                        style: GoogleFonts.poppins(color: Colors.white70),
-                                      ),
-                                    ),
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(context, true),
-                                      child: Text(
-                                        'Delete',
-                                        style: GoogleFonts.poppins(color: Colors.red),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                              return confirm ?? false;
-                            },
-                            onDismissed: (direction) {
-                              _deleteInvoice(invoice);
-                            },
-                            child: Card(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            color: const Color(0xFF2D3748),
-                            child: InkWell(
-                              onTap: () => _showInvoiceDetails(context, invoice),
-                              borderRadius: BorderRadius.circular(12),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            invoice['invoice_number']?.toString() ?? 'Unknown',
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                        ),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 6,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: _getStatusColor(status).withOpacity(0.2),
-                                            borderRadius: BorderRadius.circular(20),
-                                            border: Border.all(
-                                              color: _getStatusColor(status),
-                                              width: 1,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            status.toUpperCase(),
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                              color: _getStatusColor(status),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.person,
-                                          size: 16,
-                                          color: Colors.white54,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text(
-                                            invoice['customer_name']?.toString() ?? 'Unknown Customer',
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 14,
-                                              color: Colors.white70,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.calendar_today,
-                                          size: 16,
-                                          color: Colors.white54,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          _formatDate(invoice['invoice_date']?.toString()),
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 14,
-                                            color: Colors.white70,
-                                          ),
-                                        ),
-                                        const Spacer(),
-                                        Text(
-                                          _formatAmount(
-                                            (invoice['total_amount'] as num?)?.toDouble(),
-                                          ),
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.info_outline,
-                                          size: 16,
-                                          color: Colors.white54,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Tap for details',
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 12,
-                                            color: Colors.white54,
-                                            fontStyle: FontStyle.italic,
-                                          ),
-                                        ),
-                                        if (hasPdf) ...[
-                                          const SizedBox(width: 12),
-                                          Icon(
-                                            Icons.picture_as_pdf,
-                                            size: 16,
-                                            color: Colors.blue,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            'PDF available',
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 12,
-                                              color: Colors.blue,
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          );
-                        },
-                      ),
+  Widget _buildSearchBar() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
+        children: [
+          TextField(
+            decoration: InputDecoration(
+              hintText: 'Search invoices...',
+              prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF9CA3AF)),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear_rounded, size: 18),
+                      onPressed: () => setState(() => _searchQuery = ''),
+                    )
+                  : null,
+            ),
+            onChanged: (value) => setState(() => _searchQuery = value),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              for (final status in ['all', 'created', 'sent', 'paid'])
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: _statusFilterChip(status),
+                ),
+            ],
           ),
         ],
       ),
     );
   }
+
+  Widget _statusFilterChip(String status) {
+    final isSelected = _selectedStatus == status;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedStatus = status),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? _primary : const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          status.toUpperCase(),
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : _textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCountBar() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: Row(
+        children: [
+          const Divider(),
+          Text(
+            '${_filteredInvoices.length} invoice(s)',
+            style: GoogleFonts.plusJakartaSans(fontSize: 13, color: _textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildList() {
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
+
+    if (_filteredInvoices.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(Icons.receipt_long_outlined,
+                  size: 48, color: Color(0xFF3B82F6)),
+            ),
+            const SizedBox(height: 16),
+            Text('No invoices found',
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16, fontWeight: FontWeight.w600, color: _textPrimary)),
+            const SizedBox(height: 6),
+            Text('Tap sync to fetch from client machines',
+                style: GoogleFonts.plusJakartaSans(fontSize: 13, color: _textSecondary)),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _filteredInvoices.length,
+      itemBuilder: (context, index) {
+        final invoice = _filteredInvoices[index];
+        return _buildInvoiceCard(context, invoice);
+      },
+    );
+  }
+
+  Widget _buildInvoiceCard(BuildContext context, Map<String, dynamic> invoice) {
+    final status = invoice['status']?.toString() ?? 'unknown';
+    final hasPdf = invoice['local_pdf_path']?.toString().isNotEmpty ?? false;
+    final amount = (invoice['total_amount'] as num?)?.toDouble();
+
+    return Dismissible(
+      key: Key(invoice['supabase_id']?.toString() ?? invoice['id'].toString()),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(
+          color: const Color(0xFFDC2626),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Icon(Icons.delete_rounded, color: Colors.white, size: 28),
+      ),
+      confirmDismiss: (_) => _confirmDelete(invoice),
+      onDismissed: (_) => _deleteInvoice(invoice),
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: InkWell(
+          onTap: () => _showInvoiceDetails(context, invoice),
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        invoice['invoice_number']?.toString() ?? 'Unknown',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: _textPrimary,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _statusBg(status),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        status.toUpperCase(),
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: _statusColor(status),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _invoiceInfoRow(Icons.person_outline_rounded,
+                    invoice['customer_name']?.toString() ?? 'Unknown Customer'),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    _invoiceInfoRow(
+                        Icons.calendar_today_rounded,
+                        _formatDate(invoice['invoice_date']?.toString())),
+                    const Spacer(),
+                    Text(
+                      _formatAmount(amount),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: _primary,
+                      ),
+                    ),
+                  ],
+                ),
+                if (hasPdf) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.picture_as_pdf_rounded,
+                          size: 14, color: Color(0xFF3B82F6)),
+                      const SizedBox(width: 4),
+                      Text(
+                        'PDF available',
+                        style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12, color: const Color(0xFF3B82F6)),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _invoiceInfoRow(IconData icon, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: _textSecondary),
+        const SizedBox(width: 6),
+        Text(
+          text,
+          style: GoogleFonts.plusJakartaSans(fontSize: 13, color: _textSecondary),
+        ),
+      ],
+    );
+  }
+
+  Future<bool?> _confirmDelete(Map<String, dynamic> invoice) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Invoice?'),
+        content: Text(
+          'Delete invoice ${invoice['invoice_number']}? This cannot be undone.',
+          style: GoogleFonts.plusJakartaSans(color: _textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Delete',
+                style: GoogleFonts.plusJakartaSans(color: const Color(0xFFDC2626))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteInvoice(Map<String, dynamic> invoice) async {
+    final supabaseId = invoice['supabase_id']?.toString();
+    if (supabaseId == null || supabaseId.isEmpty) return;
+    try {
+      final result = await _localDb.deleteInvoice(supabaseId);
+      if (result > 0) {
+        final pdfPath = invoice['local_pdf_path']?.toString();
+        if (pdfPath != null && pdfPath.isNotEmpty) {
+          try {
+            final file = File(pdfPath);
+            if (await file.exists()) await file.delete();
+          } catch (_) {}
+        }
+        await _loadInvoices();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Invoice deleted'),
+              backgroundColor: Color(0xFF059669),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Error deleting invoice: $e');
+    }
+  }
+
+  Future<void> _showInvoiceDetails(
+      BuildContext context, Map<String, dynamic> invoice) async {
+    Map<String, dynamic>? clientInfo;
+    final clientId = invoice['client_id']?.toString();
+    if (clientId != null && clientId.isNotEmpty) {
+      try {
+        clientInfo = await SupabaseService.getDesktopClient(clientId);
+      } catch (_) {}
+    }
+
+    final hasPdf = invoice['local_pdf_path']?.toString().isNotEmpty ?? false;
+    final pdfPath = invoice['local_pdf_path']?.toString() ?? '';
+    final customerPhone = invoice['customer_phone']?.toString() ?? '';
+    final clientName = clientInfo?['client_name']?.toString() ?? 'Unknown Client';
+    final clientPhone = clientInfo?['phone']?.toString() ??
+        clientInfo?['contact_phone']?.toString() ??
+        'Not available';
+
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => _InvoiceDetailSheet(
+        invoice: invoice,
+        clientName: clientName,
+        clientPhone: clientPhone,
+        customerPhone: customerPhone,
+        hasPdf: hasPdf,
+        pdfPath: pdfPath,
+        onViewPdf: () {
+          Navigator.pop(context);
+          _viewInvoicePdf(pdfPath);
+        },
+        onResendWhatsApp: () => _resendWhatsApp(invoice),
+        onResendEmail: () => _resendEmail(invoice),
+        onDelete: () {
+          Navigator.pop(context);
+          _deleteInvoice(invoice);
+        },
+      ),
+    );
+  }
+
+  void _viewInvoicePdf(String pdfPath) {
+    if (pdfPath.isEmpty || !File(pdfPath).existsSync()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('PDF file not available')),
+      );
+      return;
+    }
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => _PdfViewerSheet(pdfPath: pdfPath),
+    );
+  }
+
+  Future<void> _resendWhatsApp(Map<String, dynamic> invoice) async {
+    final customerPhone = invoice['customer_phone']?.toString() ?? '';
+    if (customerPhone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Customer phone number required'),
+          backgroundColor: Color(0xFFD97706),
+        ),
+      );
+      return;
+    }
+    try {
+      final invoiceNumber = invoice['invoice_number']?.toString() ?? 'Unknown';
+      final customerName = invoice['customer_name']?.toString() ?? 'Customer';
+      final totalAmount = (invoice['total_amount'] as num?)?.toDouble() ?? 0.0;
+      final invoiceDate = _formatDate(invoice['invoice_date']?.toString());
+      final pdfUrl = invoice['pdf_url']?.toString();
+
+      final message = '''
+🏢 *NSB Motors*
+📄 *Invoice $invoiceNumber*
+
+Dear $customerName,
+
+Your invoice is ready:
+💰 Amount: ${_formatAmount(totalAmount)}
+📅 Date: $invoiceDate
+
+Thank you for your business!
+NSB Motors Team''';
+
+      await SupabaseService.insertWhatsAppMessageQueue({
+        'phone_number': customerPhone,
+        'message_content': message,
+        'message_type': 'invoice',
+        'media_path': pdfUrl,
+        'sent_by_machine_id': invoice['client_id']?.toString() ?? 'mobile_app',
+        'sent_by_user_id': 'mobile_user',
+        'sent_by_user_name': 'Mobile App User',
+        'status': 'pending',
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('WhatsApp message queued successfully'),
+            backgroundColor: Color(0xFF059669),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: const Color(0xFFDC2626),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _resendEmail(Map<String, dynamic> invoice) async {
+    final emailController = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Resend via Email'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Enter customer email:',
+                style: GoogleFonts.plusJakartaSans(color: _textSecondary)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: emailController,
+              decoration: const InputDecoration(hintText: 'customer@example.com'),
+              keyboardType: TextInputType.emailAddress,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              if (emailController.text.isNotEmpty) Navigator.pop(context, emailController.text);
+            },
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || result.isEmpty) return;
+
+    try {
+      final invoiceNumber = invoice['invoice_number']?.toString() ?? 'Unknown';
+      final customerName = invoice['customer_name']?.toString() ?? 'Customer';
+      final totalAmount = (invoice['total_amount'] as num?)?.toDouble() ?? 0.0;
+      final invoiceDate = _formatDate(invoice['invoice_date']?.toString());
+      final pdfUrl = invoice['pdf_url']?.toString();
+
+      await SupabaseService.insertEmailQueue({
+        'to_email': result,
+        'subject': 'Invoice $invoiceNumber - NSB Motors',
+        'body': _emailBody(customerName, invoiceNumber, invoiceDate, totalAmount),
+        'pdf_url': pdfUrl,
+        'sent_by_machine_id': invoice['client_id']?.toString() ?? 'mobile_app',
+        'sent_by_user_id': 'mobile_user',
+        'sent_by_user_name': 'Mobile App User',
+        'status': 'pending',
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Email queued successfully'),
+            backgroundColor: Color(0xFF059669),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: const Color(0xFFDC2626)),
+        );
+      }
+    }
+  }
+
+  String _emailBody(
+      String customerName, String invoiceNumber, String invoiceDate, double totalAmount) {
+    return '''<!DOCTYPE html><html><body style="font-family:Arial;color:#333">
+<div style="background:#1E40AF;color:white;padding:20px;text-align:center">
+  <h1>NSB Motors</h1><h2>Invoice $invoiceNumber</h2>
+</div>
+<div style="padding:20px">
+  <p>Dear $customerName,</p>
+  <p>Amount: ${_formatAmount(totalAmount)}<br>Date: $invoiceDate</p>
+  <p>Thank you for your business!</p>
+  <p>Best regards,<br>NSB Motors Team</p>
+</div></body></html>''';
+  }
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Invoice detail sheet
+// ────────────────────────────────────────────────────────────────────────────
 
 class _InvoiceDetailSheet extends StatelessWidget {
   final Map<String, dynamic> invoice;
@@ -1024,6 +676,37 @@ class _InvoiceDetailSheet extends StatelessWidget {
     required this.onDelete,
   });
 
+  static const _primary = Color(0xFF1D4ED8);
+  static const _textPrimary = Color(0xFF0F172A);
+  static const _textSecondary = Color(0xFF64748B);
+
+  String _formatDate(String? dateStr) {
+    if (dateStr == null || dateStr.isEmpty) return 'Unknown';
+    try {
+      final date = DateTime.parse(dateStr);
+      return '${date.day}/${date.month}/${date.year}';
+    } catch (e) {
+      return dateStr;
+    }
+  }
+
+  String _formatAmount(double? amount) {
+    if (amount == null) return 'UGX 0';
+    return 'UGX ${amount.toStringAsFixed(0).replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]},',
+    )}';
+  }
+
+  Color _statusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'sent': return const Color(0xFF3B82F6);
+      case 'paid': return const Color(0xFF059669);
+      case 'created': return const Color(0xFFD97706);
+      default: return const Color(0xFF6B7280);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final invoiceNumber = invoice['invoice_number']?.toString() ?? 'Unknown';
@@ -1032,249 +715,200 @@ class _InvoiceDetailSheet extends StatelessWidget {
     final invoiceDate = invoice['invoice_date']?.toString() ?? '';
     final status = invoice['status']?.toString() ?? 'unknown';
 
-    String _formatDate(String? dateStr) {
-      if (dateStr == null || dateStr.isEmpty) return 'Unknown';
-      try {
-        final date = DateTime.parse(dateStr);
-        return '${date.day}/${date.month}/${date.year}';
-      } catch (e) {
-        return dateStr;
-      }
-    }
-
-    String _formatAmount(double? amount) {
-      if (amount == null) return 'UGX 0';
-      return 'UGX ${amount.toStringAsFixed(0).replaceAllMapped(
-        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-        (Match m) => '${m[1]},',
-      )}';
-    }
-
-    Color _getStatusColor(String status) {
-      switch (status.toLowerCase()) {
-        case 'sent':
-          return Colors.blue;
-        case 'paid':
-          return Colors.green;
-        case 'created':
-          return Colors.orange;
-        default:
-          return Colors.grey;
-      }
-    }
-
     return Container(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.9,
-      ),
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          // Header
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Invoice Details',
-                  style: GoogleFonts.poppins(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+            Row(
+              children: [
+                Expanded(
+                  child: Text('Invoice Details',
+                      style: GoogleFonts.plusJakartaSans(
+                          fontSize: 20, fontWeight: FontWeight.w700, color: _textPrimary)),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Invoice summary card
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F4FF),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        invoiceNumber,
+                        style: GoogleFonts.plusJakartaSans(
+                            fontSize: 18, fontWeight: FontWeight.w800, color: _primary),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _statusColor(status).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          status.toUpperCase(),
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: _statusColor(status),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _formatAmount(totalAmount),
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 22, fontWeight: FontWeight.w800, color: _textPrimary),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(_formatDate(invoiceDate),
+                      style: GoogleFonts.plusJakartaSans(fontSize: 13, color: _textSecondary)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            _sectionTitle('Customer'),
+            _detailRow('Name', customerName),
+            Row(
+              children: [
+                Expanded(child: _detailRow('Phone', customerPhone.isEmpty ? 'Not available' : customerPhone)),
+                if (customerPhone.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.copy_rounded, size: 18, color: Color(0xFF3B82F6)),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: customerPhone));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Phone number copied')),
+                      );
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _sectionTitle('Client Machine'),
+            _detailRow('Machine', clientName),
+            _detailRow('Phone', clientPhone),
+
+            const SizedBox(height: 24),
+
+            if (hasPdf) ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: onViewPdf,
+                  icon: const Icon(Icons.picture_as_pdf_rounded, size: 18),
+                  label: const Text('View PDF'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF3B82F6),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () => Navigator.pop(context),
-              ),
+              const SizedBox(height: 10),
             ],
-          ),
-          const SizedBox(height: 20),
-          
-          // Invoice Info
-          _buildDetailRow('Invoice Number', invoiceNumber),
-          _buildDetailRow('Customer Name', customerName),
-          _buildDetailRow('Date', _formatDate(invoiceDate)),
-          _buildDetailRow('Amount', _formatAmount(totalAmount)),
-          _buildDetailRow('Status', status.toUpperCase(), 
-            valueColor: _getStatusColor(status)),
-          
-          const Divider(color: Colors.white24, height: 32),
-          
-          // Client Machine Info
-          Text(
-            'Client Machine',
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _buildDetailRow('Machine Name', clientName),
-          _buildDetailRow('Contact Phone', clientPhone),
-          
-          const Divider(color: Colors.white24, height: 32),
-          
-          // Customer Contact
-          Text(
-            'Customer Contact',
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _buildDetailRow('Phone Number', customerPhone.isEmpty ? 'Not available' : customerPhone),
-              ),
-              if (customerPhone.isNotEmpty)
-                IconButton(
-                  icon: const Icon(Icons.copy, color: Colors.blue),
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: customerPhone));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Phone number copied to clipboard',
-                          style: GoogleFonts.poppins(),
-                        ),
-                        backgroundColor: Colors.green,
-                        duration: const Duration(seconds: 2),
-                      ),
-                    );
-                  },
-                  tooltip: 'Copy phone number',
+
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: customerPhone.isNotEmpty ? onResendWhatsApp : null,
+                    icon: const Icon(Icons.chat_rounded, size: 17),
+                    label: const Text('WhatsApp'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF25D366),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
                 ),
-            ],
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // Actions
-          if (hasPdf) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: onResendEmail,
+                    icon: const Icon(Icons.email_rounded, size: 17),
+                    label: const Text('Email'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _primary,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: onViewPdf,
-                icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
-                label: Text(
-                  'View PDF',
-                  style: GoogleFonts.poppins(color: Colors.white),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
+              child: OutlinedButton.icon(
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                label: const Text('Delete Invoice'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFDC2626),
+                  side: const BorderSide(color: Color(0xFFFCA5A5)),
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
                 ),
               ),
             ),
             const SizedBox(height: 12),
-          ],
-          
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: customerPhone.isNotEmpty ? onResendWhatsApp : null,
-                  icon: const Icon(Icons.chat, color: Colors.white),
-                  label: Text(
-                    'Resend WhatsApp',
-                    style: GoogleFonts.poppins(color: Colors.white),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: onResendEmail,
-                  icon: const Icon(Icons.email, color: Colors.white),
-                  label: Text(
-                    'Resend Email',
-                    style: GoogleFonts.poppins(color: Colors.white),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF667EEA),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 16),
-          const Divider(color: Colors.white24),
-          const SizedBox(height: 16),
-          
-          // Delete button
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: onDelete,
-              icon: const Icon(Icons.delete, color: Colors.white),
-              label: Text(
-                'Delete Invoice',
-                style: GoogleFonts.poppins(color: Colors.white),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ),
-          ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDetailRow(String label, String value, {Color? valueColor}) {
+  Widget _sectionTitle(String title) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        title,
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: _textSecondary,
+          letterSpacing: 0.3,
+        ),
+      ),
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 120,
+            width: 70,
             child: Text(
               '$label:',
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.white70,
-              ),
+              style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13, fontWeight: FontWeight.w600, color: _textSecondary),
             ),
           ),
           Expanded(
-            child: Text(
-              value,
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: valueColor ?? Colors.white,
-                fontWeight: valueColor != null ? FontWeight.w600 : FontWeight.normal,
-              ),
-            ),
+            child: Text(value,
+                style: GoogleFonts.plusJakartaSans(fontSize: 13, color: _textPrimary)),
           ),
         ],
       ),
@@ -1282,9 +916,12 @@ class _InvoiceDetailSheet extends StatelessWidget {
   }
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// PDF viewer sheet
+// ────────────────────────────────────────────────────────────────────────────
+
 class _PdfViewerSheet extends StatefulWidget {
   final String pdfPath;
-
   const _PdfViewerSheet({Key? key, required this.pdfPath}) : super(key: key);
 
   @override
@@ -1300,90 +937,67 @@ class _PdfViewerSheetState extends State<_PdfViewerSheet> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: MediaQuery.of(context).size.height * 0.8,
+      height: MediaQuery.of(context).size.height * 0.85,
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
           Row(
             children: [
               Expanded(
-                child: Text(
-                  'Invoice PDF',
-                  style: GoogleFonts.poppins(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Invoice PDF',
+                        style: GoogleFonts.plusJakartaSans(
+                            fontSize: 18, fontWeight: FontWeight.w700)),
+                    if (_totalPages > 0)
+                      Text('Page ${_currentPage + 1} of $_totalPages',
+                          style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13, color: const Color(0xFF6B7280))),
+                  ],
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
+                icon: const Icon(Icons.close_rounded),
                 onPressed: () => Navigator.pop(context),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          
-          // Page info
-          if (_totalPages > 0)
-            Text(
-              'Page ${_currentPage + 1} of $_totalPages',
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.white70,
-              ),
-            ),
-          const SizedBox(height: 8),
-          
-          // PDF Viewer
+          const SizedBox(height: 12),
           Expanded(
             child: _error
                 ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.error_outline, color: Colors.red, size: 48),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Error loading PDF',
-                          style: GoogleFonts.poppins(
-                            color: Colors.white,
-                            fontSize: 16,
-                          ),
-                        ),
+                        const Icon(Icons.error_outline_rounded,
+                            size: 48, color: Color(0xFFDC2626)),
+                        const SizedBox(height: 12),
+                        Text('Error loading PDF',
+                            style: GoogleFonts.plusJakartaSans(fontSize: 15)),
                       ],
                     ),
                   )
-                : PDFView(
-                    filePath: widget.pdfPath,
-                    onRender: (pages) {
-                      setState(() {
-                        _totalPages = pages ?? 0;
-                        _isLoading = false;
-                      });
-                    },
-                    onError: (error) {
-                      setState(() {
-                        _error = true;
-                        _isLoading = false;
-                      });
-                      print('PDF Error: $error');
-                    },
-                    onPageError: (page, error) {
-                      print('PDF Page Error: $error');
-                    },
-                    onPageChanged: (page, total) {
-                      setState(() {
-                        _currentPage = page ?? 0;
-                      });
-                    },
-                  ),
+                : _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : PDFView(
+                        filePath: widget.pdfPath,
+                        enableSwipe: true,
+                        onRender: (_pages) => setState(() {
+                          _totalPages = _pages ?? 0;
+                          _isLoading = false;
+                        }),
+                        onError: (_) => setState(() {
+                          _error = true;
+                          _isLoading = false;
+                        }),
+                        onPageChanged: (page, _) =>
+                            setState(() => _currentPage = page ?? 0),
+                      ),
           ),
         ],
       ),
     );
   }
 }
-

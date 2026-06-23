@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>NSB Motors Portal</title>
+<script src="https://cdn.jsdelivr.net/npm/pocketbase@0.21.3/dist/pocketbase.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --blue:#1D4ED8;--blue-l:#EFF6FF;--blue-m:#3B82F6;
+  --ink:#0F172A;--sub:#64748B;--border:#E2E8F0;
+  --bg:#F8FAFC;--card:#fff;
+  --green:#16A34A;--green-l:#F0FDF4;
+  --red:#DC2626;--red-l:#FEF2F2;
+  --orange:#D97706;--orange-l:#FFFBEB;
+  --purple:#7C3AED;--purple-l:#F5F3FF;
+  --teal:#0D9488;--teal-l:#F0FDFA;
+}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+button{cursor:pointer;font-family:inherit;font-size:14px}
+input,select,textarea{font-family:inherit;font-size:14px}
+
+/* ── Login ── */
+#p-login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.auth-box{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:40px;width:100%;max-width:400px}
+.logo-row{display:flex;align-items:center;gap:12px;margin-bottom:28px}
+.logo-sq{width:42px;height:42px;background:var(--blue);border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;flex-shrink:0}
+.logo-row h1{font-size:20px;font-weight:700}
+.logo-row p{font-size:13px;color:var(--sub)}
+.f-label{display:block;font-size:12px;font-weight:600;margin-bottom:5px;color:var(--sub)}
+.f-input{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg);outline:none;transition:border .15s}
+.f-input:focus{border-color:var(--blue)}
+.btn-login{width:100%;padding:12px;background:var(--blue);color:#fff;border:none;border-radius:10px;font-weight:600;margin-top:4px}
+.err{color:var(--red);font-size:12px;margin-top:6px;display:none}
+
+/* ── App shell ── */
+#p-app{display:none;flex-direction:column;height:100vh;overflow:hidden}
+.topbar{height:56px;background:var(--card);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:10px;flex-shrink:0}
+.topbar .logo-sq{width:30px;height:30px;font-size:11px}
+.topbar-title{font-size:15px;font-weight:700;flex:1}
+.user-pill{background:var(--blue-l);color:var(--blue);padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600}
+.btn-out{padding:5px 12px;border:1px solid var(--border);border-radius:8px;background:transparent;font-size:12px;color:var(--sub)}
+.nav{display:flex;gap:0;padding:0 12px;background:var(--card);border-bottom:1px solid var(--border);overflow-x:auto;flex-shrink:0}
+.nav-tab{padding:10px 16px;border:none;background:transparent;font-size:13px;font-weight:500;color:var(--sub);border-bottom:2px solid transparent;white-space:nowrap;flex-shrink:0}
+.nav-tab.on{color:var(--blue);border-color:var(--blue);font-weight:600}
+.content{flex:1;overflow-y:auto;padding:16px}
+
+/* ── Invoice Form page (full-screen overlay) ── */
+#p-inv-form,#p-inv-detail{display:none;flex-direction:column;height:100vh;overflow:hidden}
+.form-topbar{height:52px;background:var(--card);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:12px;flex-shrink:0}
+.form-topbar h2{font-size:15px;font-weight:700;flex:1}
+.form-body{flex:1;overflow-y:auto;padding:16px;padding-bottom:80px}
+.form-footer{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--border);padding:12px 16px;display:flex;gap:10px;justify-content:flex-end;z-index:10}
+
+/* ── Cards / sections ── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:12px}
+.sec-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--sub);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.grid4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px}
+.ff{margin-bottom:0}
+.ff label{display:block;font-size:11px;font-weight:600;color:var(--sub);margin-bottom:4px}
+.ff input,.ff select,.ff textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);outline:none}
+.ff input:focus,.ff select:focus,.ff textarea:focus{border-color:var(--blue)}
+.ff textarea{resize:vertical;min-height:60px}
+.ff input[readonly]{background:#F1F5F9;color:var(--sub)}
+
+/* ── Phase boxes ── */
+.phase-box{border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px}
+.phase-hdr{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+.phase-hdr.p1{color:#0369A1}
+.phase-hdr.p2{color:var(--purple)}
+.phase-hdr.ura{color:var(--teal)}
+.chk-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #F1F5F9}
+.chk-row:last-child{border:none;padding-bottom:0}
+.chk-row input[type=checkbox]{width:16px;height:16px;accent-color:var(--blue);flex-shrink:0}
+.chk-row label{flex:1;font-size:13px;font-weight:500}
+.chk-usd{width:90px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);text-align:right}
+.chk-ugx{width:110px;padding:6px 8px;border:1px solid #F1F5F9;border-radius:6px;background:#F1F5F9;color:var(--sub);text-align:right;font-size:12px}
+.row-total{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding:10px 12px;border-radius:8px;font-weight:700}
+.row-total.p1{background:var(--blue-l);color:var(--blue)}
+.row-total.p2{background:var(--purple-l);color:var(--purple)}
+.row-total.ura{background:var(--teal-l);color:var(--teal)}
+.row-total.grand{background:var(--blue);color:#fff;font-size:16px}
+
+/* ── URA Tax table ── */
+.tax-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #F1F5F9;font-size:13px}
+.tax-row:last-child{border:none}
+.tax-lbl{color:var(--sub)}
+.tax-val{font-weight:600;font-family:monospace}
+.tax-val.old{color:var(--orange)}
+
+/* ── Stat grid ── */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px}
+.stat-lbl{font-size:11px;color:var(--sub);font-weight:500}
+.stat-val{font-size:20px;font-weight:700;margin-top:4px}
+
+/* ── Table ── */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:9px 10px;font-size:11px;font-weight:700;color:var(--sub);border-bottom:1px solid var(--border);white-space:nowrap;text-transform:uppercase;letter-spacing:.3px}
+td{padding:11px 10px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
+tr:last-child td{border:none}
+tr:hover td{background:var(--bg)}
+
+/* ── Badge ── */
+.badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700}
+.bg-green{background:var(--green-l);color:var(--green)}
+.bg-red{background:var(--red-l);color:var(--red)}
+.bg-orange{background:var(--orange-l);color:var(--orange)}
+.bg-blue{background:var(--blue-l);color:var(--blue)}
+.bg-gray{background:#F1F5F9;color:var(--sub)}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;font-weight:600;border:none;font-size:13px;cursor:pointer}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-blue{background:var(--blue);color:#fff}
+.btn-teal{background:var(--teal);color:#fff}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--ink)}
+.btn-sm{padding:5px 10px;font-size:12px;border-radius:7px}
+.btn-icon{padding:6px;border-radius:7px;background:var(--bg);border:1px solid var(--border);color:var(--sub)}
+.toolbar{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.search-box{flex:1;min-width:180px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);outline:none}
+.search-box:focus{border-color:var(--blue)}
+
+/* ── Modal ── */
+.moverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto}
+.moverlay.open{display:flex}
+.modal{background:var(--card);border-radius:16px;width:100%;max-width:600px;margin:auto;overflow:hidden}
+.modal.wide{max-width:820px}
+.mhdr{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.mhdr h3{font-size:16px;font-weight:700}
+.mcls{background:transparent;border:none;font-size:24px;color:var(--sub);width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:6px}
+.mcls:hover{background:var(--bg)}
+.mbody{padding:20px;max-height:70vh;overflow-y:auto}
+.mftr{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end}
+
+/* ── URA search results ── */
+.ura-item{padding:10px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:6px;transition:border .15s}
+.ura-item:hover{border-color:var(--blue);background:var(--blue-l)}
+.ura-item .make{font-weight:700;font-size:13px}
+.ura-item .detail{font-size:12px;color:var(--sub)}
+.ura-item .cif{font-size:13px;font-weight:700;color:var(--teal);float:right}
+
+/* ── Invoice detail print ── */
+.inv-hero{background:linear-gradient(135deg,#1D4ED8,#3B82F6);color:#fff;border-radius:14px;padding:20px;margin-bottom:12px}
+.inv-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+.meta-item span{display:block;font-size:10px;opacity:.7;text-transform:uppercase}
+.meta-item strong{font-size:13px}
+.phase-section{margin-bottom:12px}
+.phase-line{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px}
+.phase-line:last-child{border:none;font-weight:700}
+.grand-box{background:var(--blue);color:#fff;border-radius:10px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin-top:10px}
+.grand-box .amt{font-size:20px;font-weight:800}
+.company-footer{text-align:center;font-size:11px;color:var(--sub);padding-top:16px;border-top:1px solid var(--border);margin-top:16px}
+
+/* ── Loading / Empty ── */
+.loading{text-align:center;padding:40px;color:var(--sub)}
+.spinner{width:22px;height:22px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .6s linear infinite;display:inline-block;margin-bottom:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{text-align:center;padding:40px;color:var(--sub)}
+
+/* ── Toast ── */
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:#0F172A;color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;transition:transform .2s;z-index:999;pointer-events:none;white-space:nowrap}
+#toast.show{transform:translateX(-50%) translateY(0)}
+
+@media(max-width:600px){
+  .grid2,.grid3,.grid4{grid-template-columns:1fr}
+  .chk-usd,.chk-ugx{width:80px}
+}
+@media print{
+  #p-inv-detail .form-topbar,.form-footer,.btn,.no-print{display:none!important}
+  .form-body{padding:0!important}
+  .card{border:none!important}
+}
+</style>
+</head>
+<body>
+
+<!-- ════════════════════ LOGIN ════════════════════ -->
+<div id="p-login">
+  <div class="auth-box">
+    <div class="logo-row">
+      <div class="logo-sq">NSB</div>
+      <div><h1>NSB Motors</h1><p>Staff Portal</p></div>
+    </div>
+    <div style="margin-bottom:14px">
+      <label class="f-label">Machine ID / Username</label>
+      <input id="l-user" class="f-input" placeholder="e.g. M001" autocomplete="username"/>
+    </div>
+    <div style="margin-bottom:14px">
+      <label class="f-label">Password</label>
+      <input id="l-pass" class="f-input" type="password" autocomplete="current-password"/>
+    </div>
+    <p class="err" id="l-err"></p>
+    <button class="btn-login" onclick="doLogin()">Sign In</button>
+  </div>
+</div>
+
+<!-- ════════════════════ MAIN APP ════════════════════ -->
+<div id="p-app" style="display:none">
+  <div class="topbar">
+    <div class="logo-sq">NSB</div>
+    <span class="topbar-title">NSB Motors Portal</span>
+    <span class="user-pill" id="user-label">—</span>
+    <button class="btn-out" onclick="doLogout()">Logout</button>
+  </div>
+  <div class="nav">
+    <button class="nav-tab on" id="tab-dash" onclick="showTab('dash')">Dashboard</button>
+    <button class="nav-tab" id="tab-inv" onclick="showTab('inv')">Invoices</button>
+    <button class="nav-tab" id="tab-clients" onclick="showTab('clients')">Clients</button>
+    <button class="nav-tab" id="tab-payments" onclick="showTab('payments')">Payments</button>
+  </div>
+  <div class="content" id="main-content">
+    <div class="loading"><div class="spinner"></div><br>Loading…</div>
+  </div>
+</div>
+
+<!-- ════════════════════ INVOICE FORM (full page) ════════════════════ -->
+<div id="p-inv-form" style="display:none">
+  <div class="form-topbar">
+    <button class="btn btn-outline btn-sm" onclick="backToList()">← Back</button>
+    <h2 id="form-title">New Invoice</h2>
+    <button class="btn btn-teal btn-sm" onclick="openURASearch()">🔍 MV Database</button>
+  </div>
+  <div class="form-body" id="form-body"><!-- built by JS --></div>
+  <div class="form-footer">
+    <button class="btn btn-outline" onclick="backToList()">Cancel</button>
+    <button class="btn btn-blue" id="save-btn" onclick="saveInvoice()">💾 Save Invoice</button>
+  </div>
+</div>
+
+<!-- ════════════════════ INVOICE DETAIL (full page) ════════════════════ -->
+<div id="p-inv-detail" style="display:none;flex-direction:column;height:100vh;overflow:hidden">
+  <div class="form-topbar no-print">
+    <button class="btn btn-outline btn-sm" onclick="backFromDetail()">← Back</button>
+    <h2 id="detail-title">Invoice</h2>
+    <button class="btn btn-outline btn-sm" onclick="window.print()">🖨 Print</button>
+    <button class="btn btn-blue btn-sm" id="detail-pay-btn">+ Payment</button>
+  </div>
+  <div class="form-body" id="detail-body"><!-- built by JS --></div>
+</div>
+
+<!-- ════════════════════ MODAL: URA SEARCH ════════════════════ -->
+<div class="moverlay" id="m-ura">
+  <div class="modal wide">
+    <div class="mhdr"><h3>MV Database — URA Vehicle Search</h3><button class="mcls" onclick="closeModal('m-ura')">×</button></div>
+    <div class="mbody">
+      <div class="grid4" style="margin-bottom:12px">
+        <div class="ff"><label>Make</label><input id="ura-make" placeholder="Toyota"/></div>
+        <div class="ff"><label>Model</label><input id="ura-model" placeholder="Land Cruiser"/></div>
+        <div class="ff"><label>Year</label><input id="ura-year" type="number" placeholder="2015"/></div>
+        <div class="ff"><label>Engine CC</label><input id="ura-cc" type="number" placeholder="4000"/></div>
+      </div>
+      <button class="btn btn-blue" style="margin-bottom:14px" onclick="doURASearch()">Search</button>
+      <div id="ura-results"><p style="color:var(--sub);font-size:13px">Enter search criteria above.</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ MODAL: CLIENT FORM ════════════════════ -->
+<div class="moverlay" id="m-client">
+  <div class="modal">
+    <div class="mhdr"><h3 id="client-modal-title">New Client</h3><button class="mcls" onclick="closeModal('m-client')">×</button></div>
+    <div class="mbody">
+      <div class="grid2" style="gap:10px">
+        <div class="ff"><label>Full Name *</label><input id="c-name"/></div>
+        <div class="ff"><label>Company</label><input id="c-company"/></div>
+        <div class="ff"><label>Phone *</label><input id="c-phone" placeholder="+256…"/></div>
+        <div class="ff"><label>Email</label><input id="c-email" type="email"/></div>
+        <div class="ff"><label>City</label><input id="c-city" placeholder="Kampala"/></div>
+        <div class="ff"><label>Location / District</label><input id="c-loc"/></div>
+      </div>
+      <div class="ff" style="margin-top:10px"><label>Notes</label><textarea id="c-notes"></textarea></div>
+    </div>
+    <div class="mftr">
+      <button class="btn btn-outline" onclick="closeModal('m-client')">Cancel</button>
+      <button class="btn btn-blue" onclick="saveClient()">Save Client</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ MODAL: PAYMENT ════════════════════ -->
+<div class="moverlay" id="m-payment">
+  <div class="modal">
+    <div class="mhdr"><h3>Record Payment</h3><button class="mcls" onclick="closeModal('m-payment')">×</button></div>
+    <div class="mbody">
+      <div id="pay-inv-info" style="background:var(--blue-l);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px"></div>
+      <div class="grid2" style="gap:10px">
+        <div class="ff"><label>Amount Paid (UGX) *</label><input id="pay-amount" type="number" placeholder="0"/></div>
+        <div class="ff"><label>Payment Date</label><input id="pay-date" type="date"/></div>
+        <div class="ff"><label>Method</label>
+          <select id="pay-method">
+            <option>Cash</option><option>Bank Transfer</option><option>Mobile Money</option>
+            <option>Cheque</option><option>Other</option>
+          </select>
+        </div>
+        <div class="ff"><label>Reference / Receipt #</label><input id="pay-ref" placeholder="Optional"/></div>
+      </div>
+      <div class="ff" style="margin-top:10px"><label>Notes</label><textarea id="pay-notes" style="min-height:50px"></textarea></div>
+    </div>
+    <div class="mftr">
+      <button class="btn btn-outline" onclick="closeModal('m-payment')">Cancel</button>
+      <button class="btn btn-blue" onclick="doPayment()">Record Payment</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// POCKETBASE + STATE
+// ═══════════════════════════════════════════════════════════
+const pb = new PocketBase(window.location.origin);
+pb.autoCancellation(false);
+
+let USER = null, MID = null;
+let allClients = [];
+let currentInvoiceId = null; // editing
+let payingInvoice = null;    // invoice being paid
+let editingClientId = null;
+let prevPage = 'inv';        // where detail/form was launched from
+
+// ─── Exchange rates (persisted in localStorage) ───────────
+function getRate(key, def=3834.56) {
+  const v = localStorage.getItem(key);
+  return v ? parseFloat(v) : def;
+}
+function setRate(key, val) { localStorage.setItem(key, val); }
+
+// ═══════════════════════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════════════════════
+async function doLogin() {
+  const u = id('l-user').value.trim(), p = id('l-pass').value.trim();
+  if (!u||!p) return showErr('Enter Machine ID and password');
+  try {
+    const a = await pb.collection('machine_users').authWithPassword(u,p);
+    USER = a.record; MID = USER.machine_id;
+    startApp();
+  } catch(e) { showErr('Invalid credentials'); }
+}
+function showErr(msg) { const el=id('l-err'); el.textContent=msg; el.style.display='block'; }
+id('l-pass').onkeydown = e => { if(e.key==='Enter') doLogin(); };
+
+function doLogout() {
+  pb.authStore.clear(); USER=null; MID=null;
+  show('p-login'); hide('p-app'); hide('p-inv-form'); hide('p-inv-detail');
+}
+
+if (pb.authStore.isValid) {
+  pb.collection('machine_users').authRefresh().then(a => {
+    USER=a.record; MID=USER.machine_id; startApp();
+  }).catch(()=>pb.authStore.clear());
+}
+
+// ═══════════════════════════════════════════════════════════
+// NAV
+// ═══════════════════════════════════════════════════════════
+function startApp() {
+  hide('p-login'); show('p-app'); hide('p-inv-form'); hide('p-inv-detail');
+  id('user-label').textContent = `${USER.machine_name} (${USER.machine_id})`;
+  showTab('dash');
+}
+
+const TABS = ['dash','inv','clients','payments'];
+function showTab(t) {
+  hide('p-inv-form'); hide('p-inv-detail'); showFlex('p-app');
+  TABS.forEach(x => id('tab-'+x).classList.toggle('on',x===t));
+  id('main-content').innerHTML = '<div class="loading"><div class="spinner"></div><br>Loading…</div>';
+  if(t==='dash') loadDash();
+  else if(t==='inv') loadInvoices();
+  else if(t==='clients') loadClients();
+  else if(t==='payments') loadPayments();
+}
+
+function backToList() { hide('p-inv-form'); showFlex('p-app'); showTab(prevPage||'inv'); }
+function backFromDetail() { hide('p-inv-detail'); showFlex('p-app'); showTab(prevPage||'inv'); }
+
+// ═══════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════
+function id(s){return document.getElementById(s)}
+function show(s){id(s).style.display='block'}
+function hide(s){id(s).style.display='none'}
+function showFlex(s){id(s).style.display='flex'}
+function closeModal(m){id(m).classList.remove('open')}
+
+function toast(msg,dur=3000){
+  const el=id('toast'); el.textContent=msg; el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),dur);
+}
+
+function ugx(n){ if(!n&&n!==0)return '—'; return 'UGX '+Math.round(n).toLocaleString(); }
+function usd(n){ if(!n&&n!==0)return '—'; return 'USD '+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmt(n,dec=0){ if(!n&&n!==0)return '0'; return Number(n).toFixed(dec).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+function fdate(s){ if(!s)return '—'; return new Date(s).toLocaleDateString('en-UG',{day:'2-digit',month:'short',year:'numeric'}); }
+function yyyymmdd(d){ const dt=d||new Date(); return dt.toISOString().split('T')[0]; }
+function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+function statusBadge(s){
+  const m={paid:'bg-green',pending:'bg-orange',draft:'bg-gray',overdue:'bg-red',cancelled:'bg-gray',sent:'bg-blue'};
+  return `<span class="badge ${m[s]||'bg-gray'}">${(s||'draft').toUpperCase()}</span>`;
+}
+function genInvNum(){
+  const d=new Date();
+  return `INV-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}-${String(Math.floor(Math.random()*900)+100)}`;
+}
+
+async function loadClientsCache(){
+  if(allClients.length) return;
+  const r=await pb.collection('customers').getList(1,1000,{filter:`machine_id="${MID}"`,sort:'name'});
+  allClients=r.items;
+}
+
+// ═══════════════════════════════════════════════════════════
+// TAX CALCULATION (exact match to desktop)
+// ═══════════════════════════════════════════════════════════
+function calcURATax(cifUsd, taxRate, vehicleYear, importDutyPct=25, envLevyPct=50) {
+  const cv = cifUsd * taxRate;
+  const curYear = new Date().getFullYear();
+  const isOld = vehicleYear > 0 && vehicleYear <= (curYear - 10);
+
+  const idf       = cv * 0.01;
+  const impDuty   = cv * (importDutyPct / 100);
+  const vat       = (cv + impDuty) * 0.18;
+  const wht       = cv * 0.06;
+  const infra     = cv * 0.015;
+  const envLevy   = isOld ? cv * (envLevyPct / 100) : 0;
+  const regFee    = 1500000;
+  const stamp     = 18000;
+  const regForm   = 35000;
+  const total     = idf + impDuty + vat + wht + infra + envLevy + regFee + stamp + regForm;
+
+  return { cv, idf, impDuty, vat, wht, infra, envLevy, isOld, regFee, stamp, regForm, total, importDutyPct, envLevyPct };
+}
+
+// ═══════════════════════════════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════════════════════════════
+async function loadDash() {
+  try {
+    const [ir,cr,pr] = await Promise.all([
+      pb.collection('invoices').getList(1,500,{filter:`machine_id="${MID}"`,sort:'-created'}),
+      pb.collection('customers').getList(1,1,{filter:`machine_id="${MID}"`}),
+      pb.collection('payments').getList(1,500,{filter:`machine_id="${MID}"`}),
+    ]);
+    allClients=[];
+    const invs=ir.items, paid=invs.filter(i=>i.status==='paid');
+    const totalRev=pr.items.reduce((s,p)=>s+p.amount,0);
+    const todayStr=new Date().toDateString();
+    const todayInvs=invs.filter(i=>new Date(i.created).toDateString()===todayStr);
+
+    id('main-content').innerHTML=`
+    <div class="stat-grid">
+      <div class="stat"><div class="stat-lbl">Total Invoices</div><div class="stat-val">${invs.length}</div><div style="font-size:11px;color:var(--sub)">${todayInvs.length} today</div></div>
+      <div class="stat"><div class="stat-lbl">Paid</div><div class="stat-val" style="color:var(--green)">${paid.length}</div></div>
+      <div class="stat"><div class="stat-lbl">Pending/Draft</div><div class="stat-val" style="color:var(--orange)">${invs.filter(i=>['pending','draft'].includes(i.status)).length}</div></div>
+      <div class="stat"><div class="stat-lbl">Clients</div><div class="stat-val">${cr.totalItems}</div></div>
+      <div class="stat" style="grid-column:span 2"><div class="stat-lbl">Total Collected</div><div class="stat-val" style="font-size:16px">${ugx(totalRev)}</div></div>
+    </div>
+    <div class="card">
+      <div class="sec-title">Recent Invoices</div>
+      ${invs.length===0?'<div class="empty">No invoices yet</div>':
+      `<div class="tbl-wrap"><table>
+        <thead><tr><th>Invoice #</th><th>Client</th><th>Date</th><th>Total</th><th>Status</th><th></th></tr></thead>
+        <tbody>${invs.slice(0,10).map(i=>`<tr>
+          <td><strong>${i.invoice_number}</strong></td>
+          <td>${i.customer_name||'—'}</td>
+          <td>${fdate(i.invoice_date)}</td>
+          <td>${ugx(i.total_amount)}</td>
+          <td>${statusBadge(i.status)}</td>
+          <td><button class="btn btn-outline btn-sm" onclick="viewInvoice('${i.id}','dash')">View</button></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>`;
+  } catch(e){ id('main-content').innerHTML=`<div class="card" style="color:var(--red)">Error: ${e.message}</div>`; }
+}
+
+// ═══════════════════════════════════════════════════════════
+// INVOICES LIST
+// ═══════════════════════════════════════════════════════════
+let invSearch='', invStatus='';
+
+async function loadInvoices(){
+  try {
+    let filter=`machine_id="${MID}"`;
+    if(invSearch) filter+=` && (invoice_number~"${invSearch.replace(/"/g,'')}" || customer_name~"${invSearch.replace(/"/g,'')}")`;
+    if(invStatus) filter+=` && status="${invStatus}"`;
+    const r=await pb.collection('invoices').getList(1,500,{filter,sort:'-created'});
+    const rows=r.items.map(i=>`<tr>
+      <td><strong>${i.invoice_number}</strong></td>
+      <td>${i.customer_name||'—'}</td>
+      <td>${i.vehicle_make?`${i.vehicle_make} ${i.vehicle_model||''} ${i.vehicle_year||''}`.trim():'—'}</td>
+      <td>${fdate(i.invoice_date)}</td>
+      <td>${ugx(i.total_amount)}</td>
+      <td>${ugx(i.paid_amount)}</td>
+      <td>${statusBadge(i.status)}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-outline btn-sm" onclick="viewInvoice('${i.id}','inv')">View</button>
+        <button class="btn btn-outline btn-sm" onclick="editInvoice('${i.id}')">Edit</button>
+      </td>
+    </tr>`).join('');
+
+    id('main-content').innerHTML=`
+    <div class="toolbar">
+      <input class="search-box" placeholder="Search invoice # or client…" value="${invSearch}" oninput="invSearch=this.value;loadInvoices()"/>
+      <select style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card)" onchange="invStatus=this.value;loadInvoices()">
+        <option value="">All Status</option>
+        <option value="draft" ${invStatus==='draft'?'selected':''}>Draft</option>
+        <option value="pending" ${invStatus==='pending'?'selected':''}>Pending</option>
+        <option value="paid" ${invStatus==='paid'?'selected':''}>Paid</option>
+        <option value="overdue" ${invStatus==='overdue'?'selected':''}>Overdue</option>
+        <option value="cancelled" ${invStatus==='cancelled'?'selected':''}>Cancelled</option>
+      </select>
+      <button class="btn btn-blue" onclick="openNewInvoice()">+ New Invoice</button>
+    </div>
+    <div class="card" style="padding:0">
+      ${r.items.length===0?'<div class="empty" style="padding:32px">No invoices found</div>':
+      `<div class="tbl-wrap"><table>
+        <thead><tr><th>Invoice #</th><th>Client</th><th>Vehicle</th><th>Date</th><th>Total</th><th>Paid</th><th>Status</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`}
+    </div>`;
+  } catch(e){ id('main-content').innerHTML=`<p style="color:var(--red);padding:20px">Error: ${e.message}</p>`; }
+}
+
+// ═══════════════════════════════════════════════════════════
+// CLIENTS
+// ═══════════════════════════════════════════════════════════
+let clientSearch='';
+
+async function loadClients(){
+  try {
+    let filter=`machine_id="${MID}"`;
+    if(clientSearch) filter+=` && (name~"${clientSearch.replace(/"/g,'')}" || phone~"${clientSearch.replace(/"/g,'')}" || company~"${clientSearch.replace(/"/g,'')}")`;
+    const r=await pb.collection('customers').getList(1,500,{filter,sort:'name'});
+    allClients=r.items;
+    const rows=r.items.map(c=>`<tr>
+      <td><strong>${c.name}</strong>${c.company?`<br><span style="font-size:11px;color:var(--sub)">${c.company}</span>`:''}</td>
+      <td>${c.phone||'—'}</td>
+      <td>${c.email||'—'}</td>
+      <td>${[c.city,c.location].filter(Boolean).join(', ')||'—'}</td>
+      <td>${c.total_invoices||0}</td>
+      <td>${ugx(c.total_spent)}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="editClient('${c.id}')">Edit</button></td>
+    </tr>`).join('');
+
+    id('main-content').innerHTML=`
+    <div class="toolbar">
+      <input class="search-box" placeholder="Search clients…" value="${clientSearch}" oninput="clientSearch=this.value;loadClients()"/>
+      <button class="btn btn-blue" onclick="openNewClient()">+ New Client</button>
+    </div>
+    <div class="card" style="padding:0">
+      ${r.items.length===0?'<div class="empty" style="padding:32px">No clients yet</div>':
+      `<div class="tbl-wrap"><table>
+        <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Location</th><th>Invoices</th><th>Total Spent</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`}
+    </div>`;
+  } catch(e){ id('main-content').innerHTML=`<p style="color:var(--red);padding:20px">Error: ${e.message}</p>`; }
+}
+
+// ═══════════════════════════════════════════════════════════
+// PAYMENTS LIST
+// ═══════════════════════════════════════════════════════════
+async function loadPayments(){
+  try {
+    const r=await pb.collection('payments').getList(1,500,{filter:`machine_id="${MID}"`,sort:'-created'});
+    const rows=r.items.map(p=>`<tr>
+      <td>${fdate(p.payment_date||p.created)}</td>
+      <td><strong>${ugx(p.amount)}</strong></td>
+      <td>${p.method||'Cash'}</td>
+      <td>${p.reference||'—'}</td>
+      <td style="font-size:12px;color:var(--sub)">${p.notes||'—'}</td>
+    </tr>`).join('');
+
+    id('main-content').innerHTML=`
+    <div class="card" style="padding:0">
+      ${r.items.length===0?'<div class="empty" style="padding:32px">No payments recorded</div>':
+      `<div class="tbl-wrap"><table>
+        <thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Reference</th><th>Notes</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`}
+    </div>`;
+  } catch(e){ id('main-content').innerHTML=`<p style="color:var(--red);padding:20px">Error: ${e.message}</p>`; }
+}
+
+// ═══════════════════════════════════════════════════════════
+// CLIENT MODAL
+// ═══════════════════════════════════════════════════════════
+function openNewClient(){ editingClientId=null; id('client-modal-title').textContent='New Client'; ['name','company','phone','email','city','loc','notes'].forEach(f=>id('c-'+f).value=''); id('m-client').classList.add('open'); }
+function editClient(cid){ const c=allClients.find(x=>x.id===cid); if(!c)return; editingClientId=cid; id('client-modal-title').textContent='Edit Client'; id('c-name').value=c.name||''; id('c-company').value=c.company||''; id('c-phone').value=c.phone||''; id('c-email').value=c.email||''; id('c-city').value=c.city||''; id('c-loc').value=c.location||''; id('c-notes').value=c.notes||''; id('m-client').classList.add('open'); }
+async function saveClient(){
+  const name=id('c-name').value.trim();
+  if(!name){toast('Name required');return;}
+  const data={machine_id:MID,name,company:id('c-company').value.trim(),phone:id('c-phone').value.trim(),email:id('c-email').value.trim(),city:id('c-city').value.trim(),location:id('c-loc').value.trim(),notes:id('c-notes').value.trim(),is_active:true,total_spent:0,total_invoices:0,balance:0};
+  try{
+    if(editingClientId) await pb.collection('customers').update(editingClientId,data);
+    else await pb.collection('customers').create(data);
+    allClients=[];
+    closeModal('m-client'); toast(editingClientId?'Client updated':'Client created'); loadClients();
+  }catch(e){toast('Error: '+e.message);}
+}
+
+// ═══════════════════════════════════════════════════════════
+// PAYMENT MODAL
+// ═══════════════════════════════════════════════════════════
+function openPayment(inv){
+  payingInvoice=inv;
+  id('pay-inv-info').innerHTML=`<strong>${inv.invoice_number}</strong> · ${inv.customer_name||'—'}<br>Total: ${ugx(inv.total_amount)} · Paid: ${ugx(inv.paid_amount||0)} · <strong style="color:var(--red)">Balance: ${ugx((inv.total_amount||0)-(inv.paid_amount||0))}</strong>`;
+  id('pay-amount').value='';
+  id('pay-date').value=yyyymmdd();
+  id('pay-ref').value=''; id('pay-notes').value='';
+  id('m-payment').classList.add('open');
+}
+async function doPayment(){
+  if(!payingInvoice){return;}
+  const amt=parseFloat(id('pay-amount').value)||0;
+  if(!amt){toast('Enter payment amount');return;}
+  const data={machine_id:MID,invoice_id:payingInvoice.id,customer_id:payingInvoice.customer_id,amount:amt,payment_date:id('pay-date').value,method:id('pay-method').value,reference:id('pay-ref').value,notes:id('pay-notes').value};
+  try{
+    await pb.collection('payments').create(data);
+    // Update invoice paid_amount and status
+    const newPaid=(payingInvoice.paid_amount||0)+amt;
+    const newBal=(payingInvoice.total_amount||0)-newPaid;
+    const newStatus=newBal<=0?'paid':'pending';
+    await pb.collection('invoices').update(payingInvoice.id,{paid_amount:newPaid,balance_amount:newBal,status:newStatus});
+    closeModal('m-payment'); toast('Payment recorded');
+    // reload detail
+    viewInvoice(payingInvoice.id, prevPage);
+  }catch(e){toast('Error: '+e.message);}
+}
+
+// ═══════════════════════════════════════════════════════════
+// URA SEARCH
+// ═══════════════════════════════════════════════════════════
+function openURASearch(){ id('m-ura').classList.add('open'); id('ura-results').innerHTML='<p style="color:var(--sub);font-size:13px">Enter search criteria above.</p>'; }
+
+async function doURASearch(){
+  const mk=id('ura-make').value.trim(), md=id('ura-model').value.trim(), yr=id('ura-year').value.trim(), cc=id('ura-cc').value.trim();
+  if(!mk&&!md&&!yr){toast('Enter at least Make or Model');return;}
+
+  id('ura-results').innerHTML='<div class="loading"><div class="spinner"></div><br>Searching…</div>';
+  try{
+    let filter='';
+    const parts=[];
+    if(mk) parts.push(`make~"${mk.replace(/"/g,'')}"`);
+    if(md) parts.push(`model~"${md.replace(/"/g,'')}"`);
+    if(yr) parts.push(`(year_from<=${yr} && year_to>=${yr})`);
+    if(cc) parts.push(`engine_cc=${cc}`);
+    filter=parts.join(' && ');
+
+    const r=await pb.collection('ura_vehicles').getList(1,50,{filter,sort:'make,model,year_from'});
+    if(r.items.length===0){
+      id('ura-results').innerHTML='<div class="empty">No vehicles found. Try broader search terms.<br><br><small style="color:var(--sub)">If MV database not imported yet, use manual CIF entry in the form.</small></div>';
+      return;
+    }
+    const taxRate=getRate('tax_rate');
+    id('ura-results').innerHTML=r.items.map(v=>{
+      const tax=calcURATax(v.cif_usd||0,taxRate,v.year_from||0);
+      return `<div class="ura-item" onclick="selectURAVehicle(${JSON.stringify({id:v.id,make:v.make,model:v.model,year_from:v.year_from,year_to:v.year_to,engine_cc:v.engine_cc,cif_usd:v.cif_usd,fuel_type:v.fuel_type,country:v.country_of_origin,serial_no:v.serial_no}).replace(/"/g,'&quot;')})">
+        <span class="cif">${usd(v.cif_usd)}</span>
+        <div class="make">${v.make} ${v.model}</div>
+        <div class="detail">${v.year_from}${v.year_to&&v.year_to!==v.year_from?'–'+v.year_to:''} · ${v.engine_cc?v.engine_cc+'cc':''} · ${v.fuel_type||''} · URA: <strong>${ugx(tax.total)}</strong></div>
+        ${v.serial_no?`<div style="font-size:11px;color:var(--sub)">S/N: ${v.serial_no}</div>`:''}
+      </div>`;
+    }).join('');
+  }catch(e){
+    if(e.message&&e.message.includes('not found')){
+      id('ura-results').innerHTML='<div class="empty">MV database not yet imported.<br><br>Run <code>node import_ura.js &lt;path/to/mv.csv&gt;</code> to import data.<br><br>You can still enter CIF value manually.</div>';
+    } else {
+      id('ura-results').innerHTML=`<div class="empty" style="color:var(--red)">Error: ${e.message}</div>`;
+    }
+  }
+}
+
+function selectURAVehicle(v){
+  // Fill form fields
+  const set=(fid,val)=>{ const el=id(fid); if(el) el.value=val||''; };
+  set('f-make',v.make);
+  set('f-model',v.model);
+  set('f-year',v.year_from);
+  set('f-cc',v.engine_cc);
+  set('f-fuel',v.fuel_type);
+  set('f-origin',v.country||'JP');
+  set('f-cif-usd',v.cif_usd||0);
+  if(v.serial_no) set('f-chassis',v.serial_no);
+  recalcAll();
+  closeModal('m-ura');
+  toast(`Selected: ${v.make} ${v.model} ${v.year_from}`);
+}
+
+// ═══════════════════════════════════════════════════════════
+// INVOICE FORM
+// ═══════════════════════════════════════════════════════════
+const COLORS=['White','Black','Silver','Gray','Blue','Red','Green','Brown','Gold','Orange','Yellow'];
+const FUELS=['Petrol','Diesel','Hybrid Petrol','Hybrid Diesel','Electric (EV)'];
+const TRANS=['Automatic','Manual','Auto/Manual','CVT','DCT','Semi-Auto','Sport AT','Unspecified'];
+const COUNTRIES=[{c:'JP',l:'Japan'},{c:'AU',l:'Australia'},{c:'TH',l:'Thailand'},{c:'IN',l:'India'},{c:'DE',l:'Germany'},{c:'IT',l:'Italy'},{c:'US',l:'United States'},{c:'GB',l:'United Kingdom'},{c:'NL',l:'Netherlands'},{c:'SE',l:'Sweden'},{c:'CN',l:'China'},{c:'ZA',l:'South Africa'},{c:'KE',l:'Kenya'},{c:'CA',l:'Canada'},{c:'FR',l:'France'},{c:'AE',l:'UAE'},{c:'KR',l:'South Korea'},{c:'SG',l:'Singapore'}];
+const V_CLASSES=[{v:'Car',id:25,ev:50},{v:'Trucks & Cabins (3.5-6.9T)',id:25,ev:20},{v:'7 Tonne Trucks',id:10,ev:20},{v:'Tractor Heads / 20T+',id:0,ev:20}];
+
+async function openNewInvoice(){
+  prevPage='inv'; currentInvoiceId=null;
+  await loadClientsCache();
+  id('form-title').textContent='New Invoice';
+  buildForm(null);
+  hide('p-app'); showFlex('p-inv-form'); window.scrollTo(0,0);
+}
+
+async function editInvoice(iid){
+  prevPage='inv'; currentInvoiceId=iid;
+  await loadClientsCache();
+  id('form-title').textContent='Edit Invoice';
+  try{
+    const inv=await pb.collection('invoices').getOne(iid);
+    buildForm(inv);
+    hide('p-app'); showFlex('p-inv-form');
+  }catch(e){toast('Error: '+e.message);}
+}
+
+function buildForm(inv){
+  const v=inv||{};
+  const today=yyyymmdd();
+  const due=yyyymmdd(addDays(new Date(),30));
+  const taxRate=getRate('tax_rate');
+  const p1Rate=getRate('p1_rate');
+
+  const clientOpts=allClients.map(c=>`<option value="${c.id}" ${v.customer_id===c.id?'selected':''}>${c.name}${c.company?' ('+c.company+')':''}</option>`).join('');
+  const colorOpts=COLORS.map(c=>`<option ${(v.color||'White')===c?'selected':''}>${c}</option>`).join('');
+  const fuelOpts=FUELS.map(f=>`<option ${(v.fuel_type||'Petrol')===f?'selected':''}>${f}</option>`).join('');
+  const transOpts=TRANS.map(t=>`<option ${(v.transmission||'Automatic')===t?'selected':''}>${t}</option>`).join('');
+  const countryOpts=COUNTRIES.map(c=>`<option value="${c.c}" ${(v.country_of_origin||'JP')===c.c?'selected':''}>${c.l} (${c.c})</option>`).join('');
+  const classOpts=V_CLASSES.map(c=>`<option value="${c.v}" data-id="${c.id}" data-ev="${c.ev}" ${(v.vehicle_class||'Car')===c.v?'selected':''}>${c.v}</option>`).join('');
+  const statusOpts=['draft','pending','paid','overdue','cancelled'].map(s=>`<option ${(v.status||'draft')===s?'selected':''}>${s}</option>`).join('');
+
+  id('form-body').innerHTML=`
+  <!-- ── Invoice Header ── -->
+  <div class="card">
+    <div class="sec-title">Invoice Info</div>
+    <div class="grid3">
+      <div class="ff"><label>Invoice Number</label><input id="f-num" value="${v.invoice_number||genInvNum()}"/></div>
+      <div class="ff"><label>Invoice Date</label><input id="f-date" type="date" value="${(v.invoice_date||today).substring(0,10)}"/></div>
+      <div class="ff"><label>Due Date</label><input id="f-due" type="date" value="${(v.due_date||due).substring(0,10)}"/></div>
+    </div>
+    <div class="grid3" style="margin-top:10px">
+      <div class="ff"><label>Type</label>
+        <select id="f-type">
+          <option value="carSale" ${(v.invoice_type||'carSale')==='carSale'?'selected':''}>Car Sale Invoice</option>
+          <option value="quotation" ${v.invoice_type==='quotation'?'selected':''}>Quotation</option>
+          <option value="invoice" ${v.invoice_type==='invoice'?'selected':''}>General Invoice</option>
+        </select>
+      </div>
+      <div class="ff"><label>Status</label><select id="f-status">${statusOpts}</select></div>
+      <div class="ff"><label>Stock No</label><input id="f-stock" value="${v.stock_no||''}"/></div>
+    </div>
+  </div>
+
+  <!-- ── Customer ── -->
+  <div class="card">
+    <div class="sec-title" style="display:flex;justify-content:space-between;align-items:center">
+      Client
+      <button class="btn btn-outline btn-sm" onclick="openNewClient()">+ New Client</button>
+    </div>
+    <div class="ff">
+      <label>Select Client *</label>
+      <select id="f-client">
+        <option value="">— Select client —</option>
+        ${clientOpts}
+      </select>
+    </div>
+  </div>
+
+  <!-- ── Vehicle Details ── -->
+  <div class="card">
+    <div class="sec-title" style="display:flex;justify-content:space-between;align-items:center">
+      Vehicle Details
+      <button class="btn btn-teal btn-sm" onclick="openURASearch()">🔍 MV Lookup</button>
+    </div>
+    <div class="grid4">
+      <div class="ff"><label>Make</label><input id="f-make" value="${v.vehicle_make||''}" placeholder="Toyota" oninput="recalcAll()"/></div>
+      <div class="ff"><label>Model</label><input id="f-model" value="${v.vehicle_model||''}" placeholder="Land Cruiser" oninput="recalcAll()"/></div>
+      <div class="ff"><label>Model Suffix</label><input id="f-suffix" value="${v.vehicle_model_suffix||''}" placeholder="Optional"/></div>
+      <div class="ff"><label>Year</label><input id="f-year" type="number" value="${v.vehicle_year||''}" placeholder="2015" oninput="recalcAll()"/></div>
+    </div>
+    <div class="grid4" style="margin-top:10px">
+      <div class="ff"><label>Engine CC</label><input id="f-cc" type="number" value="${v.engine_cc||''}" placeholder="4000" oninput="recalcAll()"/></div>
+      <div class="ff"><label>Chassis / S/N</label><input id="f-chassis" value="${v.chassis_no||''}"/></div>
+      <div class="ff"><label>Fuel Type</label><select id="f-fuel">${fuelOpts}</select></div>
+      <div class="ff"><label>Transmission</label><select id="f-trans">${transOpts}</select></div>
+    </div>
+    <div class="grid3" style="margin-top:10px">
+      <div class="ff"><label>Color</label><select id="f-color" onchange="toggleCustomColor()">${colorOpts}<option value="Custom" ${v.color&&!COLORS.includes(v.color)?'selected':''}>Custom…</option></select></div>
+      <div class="ff" id="custom-color-wrap" style="${v.color&&!COLORS.includes(v.color)?'':'display:none'}"><label>Custom Color</label><input id="f-color-custom" value="${v.color&&!COLORS.includes(v.color)?v.color:''}"/></div>
+      <div class="ff"><label>Country of Origin</label><select id="f-origin">${countryOpts}</select></div>
+      <div class="ff"><label>Vehicle Class</label><select id="f-class" onchange="recalcAll()">${classOpts}</select></div>
+    </div>
+  </div>
+
+  <!-- ── CIF & Exchange Rates ── -->
+  <div class="card">
+    <div class="sec-title">CIF Value & Exchange Rates</div>
+    <div class="grid4">
+      <div class="ff"><label>CIF Value (USD)</label><input id="f-cif-usd" type="number" step="0.01" value="${v.cif_usd||''}" placeholder="0.00" oninput="recalcAll()"/></div>
+      <div class="ff">
+        <label>Tax Exchange Rate (UGX/USD) <span id="tax-lock-icon" style="cursor:pointer" onclick="toggleTaxLock()">🔒</span></label>
+        <input id="f-tax-rate" type="number" step="0.01" value="${v.tax_exchange_rate||taxRate}" oninput="setRate('tax_rate',this.value);recalcAll()"/>
+      </div>
+      <div class="ff">
+        <label>Phase 1 Rate (UGX/USD) <span id="p1-lock-icon" style="cursor:pointer" onclick="toggleP1Lock()">🔒</span></label>
+        <input id="f-p1-rate" type="number" step="0.01" value="${v.p1_exchange_rate||p1Rate}" oninput="setRate('p1_rate',this.value);recalcAll()"/>
+      </div>
+      <div class="ff"><label>Import Duty %</label><input id="f-duty-pct" type="number" value="${v.import_duty_pct||25}" min="0" max="100" oninput="recalcAll()"/></div>
+    </div>
+  </div>
+
+  <!-- ── Phase 1: Upfront Costs ── -->
+  <div class="card">
+    <div class="phase-hdr p1">Phase 1 — Upfront Costs (USD → UGX)</div>
+    <div class="phase-box">
+      <div class="chk-row">
+        <input type="checkbox" id="ck-cfm" ${v.tick_cf_mombasa!==false?'checked':''} onchange="recalcAll()"/>
+        <label>C&amp;F Mombasa (Japan → Mombasa)</label>
+        <input class="chk-usd" id="f-cfm" type="number" step="0.01" value="${v.cf_mombasa_usd||0}" oninput="recalcAll()"/> USD
+        <input class="chk-ugx" id="d-cfm" readonly value="—"/> UGX
+      </div>
+      <div class="chk-row">
+        <input type="checkbox" id="ck-clr" ${v.tick_clearance?'checked':''} onchange="recalcAll()"/>
+        <label>Clearance Mombasa → Kampala</label>
+        <input class="chk-usd" id="f-clr" type="number" step="0.01" value="${v.clearance_usd||0}" oninput="recalcAll()"/> USD
+        <input class="chk-ugx" id="d-clr" readonly value="—"/> UGX
+      </div>
+      <div class="chk-row">
+        <input type="checkbox" id="ck-cfk" ${v.tick_cf_kampala?'checked':''} onchange="recalcAll()"/>
+        <label>C&amp;F Kampala (Japan → Kampala)</label>
+        <input class="chk-usd" id="f-cfk" type="number" step="0.01" value="${v.cf_kampala_usd||0}" oninput="recalcAll()"/> USD
+        <input class="chk-ugx" id="d-cfk" readonly value="—"/> UGX
+      </div>
+      <div class="chk-row">
+        <input type="checkbox" id="ck-tt" ${v.tick_tt!==false?'checked':''} onchange="recalcAll()"/>
+        <label>TT Charges (Wire Transfer)</label>
+        <input class="chk-usd" id="f-tt" type="number" step="0.01" value="${v.tt_usd||40}" oninput="recalcAll()"/> USD
+        <input class="chk-ugx" id="d-tt" readonly value="—"/> UGX
+      </div>
+      <div class="row-total p1"><span>1st Installment Total</span><span id="d-p1-total">—</span></div>
+    </div>
+  </div>
+
+  <!-- ── URA Tax ── -->
+  <div class="card">
+    <div class="phase-hdr ura">URA Tax Calculation (Auto from CIF)</div>
+    <div class="phase-box">
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px">
+        <input type="checkbox" id="ck-ura" ${v.include_ura_tax!==false?'checked':''} onchange="recalcAll()"/>
+        Include Taxes Payable to URA
+      </label>
+      <div id="ura-tax-breakdown" style="font-size:13px"></div>
+      <div class="row-total ura" style="margin-top:10px"><span>URA Taxes Total</span><span id="d-ura-total">—</span></div>
+    </div>
+  </div>
+
+  <!-- ── Phase 2: Settlement ── -->
+  <div class="card">
+    <div class="phase-hdr p2">Phase 2 — Settlement / Registration Fees</div>
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:13px">
+      <input type="checkbox" id="ck-p2" ${v.include_phase2?'checked':''} onchange="recalcAll()"/>
+      Include Phase 2 Settlement
+    </label>
+    <div id="p2-inputs" style="${v.include_phase2?'':'display:none'}">
+      <div class="phase-box">
+        <div class="grid3">
+          <div class="ff"><label>Number Plates (UGX)</label><input id="f-plates" type="number" value="${v.number_plates_fee||714300}" oninput="recalcAll()"/></div>
+          <div class="ff"><label>3rd Party Insurance (UGX)</label><input id="f-ins" type="number" value="${v.third_party_insurance||70000}" oninput="recalcAll()"/></div>
+          <div class="ff"><label>Agency / Reg Fees (UGX)</label><input id="f-agency" type="number" value="${v.agency_fees||400000}" oninput="recalcAll()"/></div>
+        </div>
+        <div class="row-total p2" style="margin-top:12px"><span>2nd Installment Total</span><span id="d-p2-total">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Totals Summary ── -->
+  <div class="card">
+    <div class="sec-title">Grand Total</div>
+    <div id="totals-summary"></div>
+  </div>
+
+  <!-- ── Notes ── -->
+  <div class="card">
+    <div class="sec-title">Notes &amp; Terms</div>
+    <div class="ff"><label>Notes</label><textarea id="f-notes">${v.notes||''}</textarea></div>
+    <div class="ff" style="margin-top:10px"><label>Terms</label><textarea id="f-terms">${v.terms||''}</textarea></div>
+  </div>`;
+
+  // Wire phase2 toggle
+  id('ck-p2').addEventListener('change',function(){ id('p2-inputs').style.display=this.checked?'block':'none'; recalcAll(); });
+
+  recalcAll();
+}
+
+function toggleCustomColor(){
+  const v=id('f-color').value;
+  id('custom-color-wrap').style.display=v==='Custom'?'block':'none';
+}
+
+// Lock icons (visual only for web)
+function toggleTaxLock(){ toast('Exchange rate saved in this browser session'); }
+function toggleP1Lock(){ toast('Phase 1 rate saved in this browser session'); }
+
+// ─── Master recalculate ───────────────────────────────────
+function recalcAll(){
+  const p1Rate=parseFloat(id('f-p1-rate')?.value)||getRate('p1_rate');
+  const taxRate=parseFloat(id('f-tax-rate')?.value)||getRate('tax_rate');
+  const cifUsd=parseFloat(id('f-cif-usd')?.value)||0;
+  const year=parseInt(id('f-year')?.value)||0;
+  const dutyPct=parseFloat(id('f-duty-pct')?.value)||25;
+
+  // Phase 1
+  const items=[
+    {id:'cfm',ck:'ck-cfm',fin:'f-cfm',dout:'d-cfm'},
+    {id:'clr',ck:'ck-clr',fin:'f-clr',dout:'d-clr'},
+    {id:'cfk',ck:'ck-cfk',fin:'f-cfk',dout:'d-cfk'},
+    {id:'tt', ck:'ck-tt', fin:'f-tt', dout:'d-tt'},
+  ];
+  let p1Total=0;
+  items.forEach(it=>{
+    const ck=id(it.ck)?.checked;
+    const usdVal=parseFloat(id(it.fin)?.value)||0;
+    const ugxVal=ck?usdVal*p1Rate:0;
+    if(id(it.dout)) id(it.dout).value=ck?fmt(ugxVal):'—';
+    if(ck) p1Total+=ugxVal;
+  });
+  if(id('d-p1-total')) id('d-p1-total').textContent=ugx(p1Total);
+
+  // URA Tax
+  let uraTotal=0;
+  const incUra=id('ck-ura')?.checked;
+  if(cifUsd>0&&incUra){
+    const t=calcURATax(cifUsd,taxRate,year,dutyPct);
+    uraTotal=t.total;
+    if(id('ura-tax-breakdown')) id('ura-tax-breakdown').innerHTML=`
+      <div class="tax-row"><span class="tax-lbl">Customs Value (CV)</span><span class="tax-val">${ugx(t.cv)}</span></div>
+      <div class="tax-row"><span class="tax-lbl">IDF (1%)</span><span class="tax-val">${ugx(t.idf)}</span></div>
+      <div class="tax-row"><span class="tax-lbl">Import Duty (${t.importDutyPct}%)</span><span class="tax-val">${ugx(t.impDuty)}</span></div>
+      <div class="tax-row"><span class="tax-lbl">VAT 18% on (CV + Duty)</span><span class="tax-val">${ugx(t.vat)}</span></div>
+      <div class="tax-row"><span class="tax-lbl">Withholding Tax (WHT 6%)</span><span class="tax-val">${ugx(t.wht)}</span></div>
+      <div class="tax-row"><span class="tax-lbl">Infrastructure Levy (1.5%)</span><span class="tax-val">${ugx(t.infra)}</span></div>
+      <div class="tax-row"><span class="tax-lbl">Environmental Levy${t.isOld?' ⚠ (vehicle >10yrs)':' (N/A — <10yrs)'}</span><span class="tax-val ${t.isOld?'old':''}">${t.isOld?ugx(t.envLevy):'UGX 0'}</span></div>
+      <div class="tax-row"><span class="tax-lbl">Registration Fee (fixed)</span><span class="tax-val">${ugx(t.regFee)}</span></div>
+      <div class="tax-row"><span class="tax-lbl">Stamp Duty (fixed)</span><span class="tax-val">${ugx(t.stamp)}</span></div>
+      <div class="tax-row"><span class="tax-lbl">Registration Form (fixed)</span><span class="tax-val">${ugx(t.regForm)}</span></div>`;
+  } else {
+    if(id('ura-tax-breakdown')) id('ura-tax-breakdown').innerHTML=cifUsd>0?'<p style="color:var(--sub);font-size:13px">URA tax excluded</p>':'<p style="color:var(--sub);font-size:13px">Enter CIF value to see tax breakdown.</p>';
+  }
+  if(id('d-ura-total')) id('d-ura-total').textContent=incUra?ugx(uraTotal):'—';
+
+  // Phase 2
+  let p2Total=0;
+  const incP2=id('ck-p2')?.checked;
+  if(incP2){
+    const plates=parseFloat(id('f-plates')?.value)||714300;
+    const ins=parseFloat(id('f-ins')?.value)||70000;
+    const agency=parseFloat(id('f-agency')?.value)||400000;
+    p2Total=plates+ins+agency;
+    if(id('d-p2-total')) id('d-p2-total').textContent=ugx(p2Total);
+  }
+
+  // Grand total
+  const grand=p1Total+(incUra?uraTotal:0)+p2Total;
+  if(id('totals-summary')) id('totals-summary').innerHTML=`
+    <div class="phase-line"><span style="color:#0369A1">1st Installment (Phase 1)</span><span style="font-weight:600">${ugx(p1Total)}</span></div>
+    ${incUra?`<div class="phase-line"><span style="color:var(--teal)">URA Taxes</span><span style="font-weight:600">${ugx(uraTotal)}</span></div>`:''}
+    ${incP2?`<div class="phase-line"><span style="color:var(--purple)">2nd Installment (Phase 2)</span><span style="font-weight:600">${ugx(p2Total)}</span></div>`:''}
+    <div class="row-total grand"><span>Grand Total</span><span>${ugx(grand)}</span></div>`;
+}
+
+// ─── Save Invoice ─────────────────────────────────────────
+async function saveInvoice(){
+  const invNum=id('f-num')?.value.trim();
+  const clientId=id('f-client')?.value;
+  if(!invNum){toast('Invoice number required');return;}
+  if(!clientId){toast('Select a client');return;}
+
+  const client=allClients.find(c=>c.id===clientId);
+  const p1Rate=parseFloat(id('f-p1-rate').value)||getRate('p1_rate');
+  const taxRate=parseFloat(id('f-tax-rate').value)||getRate('tax_rate');
+  const cifUsd=parseFloat(id('f-cif-usd').value)||0;
+  const year=parseInt(id('f-year').value)||0;
+  const dutyPct=parseFloat(id('f-duty-pct').value)||25;
+  const incUra=id('ck-ura').checked;
+  const incP2=id('ck-p2').checked;
+  const tickCfm=id('ck-cfm').checked;
+  const tickClr=id('ck-clr').checked;
+  const tickCfk=id('ck-cfk').checked;
+  const tickTT=id('ck-tt').checked;
+
+  const cfmUsd=parseFloat(id('f-cfm').value)||0;
+  const clrUsd=parseFloat(id('f-clr').value)||0;
+  const cfkUsd=parseFloat(id('f-cfk').value)||0;
+  const ttUsd=parseFloat(id('f-tt').value)||40;
+
+  let p1Total=0;
+  if(tickCfm) p1Total+=cfmUsd*p1Rate;
+  if(tickClr) p1Total+=clrUsd*p1Rate;
+  if(tickCfk) p1Total+=cfkUsd*p1Rate;
+  if(tickTT)  p1Total+=ttUsd*p1Rate;
+
+  let uraTotal=0, taxData=null;
+  if(incUra&&cifUsd>0){ taxData=calcURATax(cifUsd,taxRate,year,dutyPct); uraTotal=taxData.total; }
+
+  const plates=parseFloat(id('f-plates')?.value)||714300;
+  const ins=parseFloat(id('f-ins')?.value)||70000;
+  const agency=parseFloat(id('f-agency')?.value)||400000;
+  const p2Total=incP2?(plates+ins+agency):0;
+  const grand=p1Total+uraTotal+p2Total;
+
+  const colorEl=id('f-color'); const colorVal=colorEl.value==='Custom'?id('f-color-custom').value:colorEl.value;
+
+  const data={
+    machine_id: MID,
+    invoice_number: invNum,
+    invoice_type: id('f-type').value,
+    customer_id: clientId,
+    customer_name: client?.name||'',
+    invoice_date: id('f-date').value,
+    due_date: id('f-due').value,
+    status: id('f-status').value,
+    stock_no: id('f-stock').value,
+    vehicle_make: id('f-make').value,
+    vehicle_model: id('f-model').value,
+    vehicle_model_suffix: id('f-suffix').value,
+    vehicle_year: year,
+    engine_cc: parseInt(id('f-cc').value)||0,
+    chassis_no: id('f-chassis').value,
+    fuel_type: id('f-fuel').value,
+    transmission: id('f-trans').value,
+    color: colorVal,
+    country_of_origin: id('f-origin').value,
+    vehicle_class: id('f-class').value,
+    // CIF
+    cif_usd: cifUsd,
+    tax_exchange_rate: taxRate,
+    p1_exchange_rate: p1Rate,
+    import_duty_pct: dutyPct,
+    // Phase 1 toggles
+    tick_cf_mombasa: tickCfm,
+    tick_clearance: tickClr,
+    tick_cf_kampala: tickCfk,
+    tick_tt: tickTT,
+    cf_mombasa_usd: cfmUsd,
+    clearance_usd: clrUsd,
+    cf_kampala_usd: cfkUsd,
+    tt_usd: ttUsd,
+    first_installment_ugx: p1Total,
+    // URA
+    include_ura_tax: incUra,
+    taxes_ura: uraTotal,
+    // Phase 2
+    include_phase2: incP2,
+    number_plates_fee: incP2?plates:0,
+    third_party_insurance: incP2?ins:0,
+    agency_fees: incP2?agency:0,
+    second_installment_ugx: p2Total,
+    // Totals
+    total_amount: grand,
+    paid_amount: 0,
+    balance_amount: grand,
+    // Tax detail (store as JSON)
+    tax_detail: taxData||{},
+    notes: id('f-notes').value,
+    terms: id('f-terms').value,
+    is_finalized: false,
+  };
+
+  const btn=id('save-btn'); btn.disabled=true; btn.textContent='Saving…';
+  try{
+    if(currentInvoiceId){
+      // preserve paid_amount on edit
+      const existing=await pb.collection('invoices').getOne(currentInvoiceId);
+      data.paid_amount=existing.paid_amount||0;
+      data.balance_amount=grand-(existing.paid_amount||0);
+      await pb.collection('invoices').update(currentInvoiceId,data);
+      toast('Invoice updated');
+    } else {
+      const rec=await pb.collection('invoices').create(data);
+      // update client invoice count
+      if(client){ pb.collection('customers').update(clientId,{total_invoices:(client.total_invoices||0)+1}).catch(()=>{}); }
+      toast('Invoice created');
+      currentInvoiceId=rec.id;
+    }
+    backToList();
+  }catch(e){
+    toast('Error: '+e.message);
+  }finally{
+    btn.disabled=false; btn.textContent='💾 Save Invoice';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// INVOICE DETAIL VIEW
+// ═══════════════════════════════════════════════════════════
+async function viewInvoice(iid, from){
+  prevPage=from||'inv';
+  try{
+    const inv=await pb.collection('invoices').getOne(iid);
+    const payments=await pb.collection('payments').getList(1,100,{filter:`invoice_id="${iid}"`,sort:'-created'});
+
+    hide('p-app'); showFlex('p-inv-detail'); id('p-inv-detail').style.flexDirection='column';
+    id('detail-title').textContent=inv.invoice_number;
+    id('detail-pay-btn').onclick=()=>openPayment(inv);
+
+    const td=inv.tax_detail||{};
+    const veh=[inv.vehicle_make,inv.vehicle_model,inv.vehicle_model_suffix,inv.vehicle_year&&String(inv.vehicle_year)].filter(Boolean).join(' ');
+    const curYear=new Date().getFullYear();
+    const isOld=inv.vehicle_year&&inv.vehicle_year<=(curYear-10);
+
+    id('detail-body').innerHTML=`
+    <!-- Hero -->
+    <div class="inv-hero">
+      <div style="display:flex;justify-content:space-between;align-items:start">
+        <div>
+          <div style="font-size:11px;opacity:.7;margin-bottom:4px;text-transform:uppercase">${inv.invoice_type==='quotation'?'Quotation':'Tax Invoice'}</div>
+          <h2 style="font-size:22px;font-weight:800">${inv.invoice_number}</h2>
+        </div>
+        ${statusBadge(inv.status)}
+      </div>
+      <div class="inv-meta">
+        <div class="meta-item"><span>Client</span><strong>${inv.customer_name||'—'}</strong></div>
+        <div class="meta-item"><span>Invoice Date</span><strong>${fdate(inv.invoice_date)}</strong></div>
+        <div class="meta-item"><span>Vehicle</span><strong>${veh||'—'}</strong></div>
+        <div class="meta-item"><span>Due Date</span><strong>${fdate(inv.due_date)}</strong></div>
+        ${inv.chassis_no?`<div class="meta-item"><span>Chassis / S/N</span><strong>${inv.chassis_no}</strong></div>`:''}
+        ${inv.stock_no?`<div class="meta-item"><span>Stock No</span><strong>${inv.stock_no}</strong></div>`:''}
+      </div>
+    </div>
+
+    <!-- Vehicle Info -->
+    <div class="card">
+      <div class="sec-title">Vehicle Specifications</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">
+        ${[['Engine',inv.engine_cc?(inv.engine_cc+'cc'):''],['Fuel',inv.fuel_type],['Transmission',inv.transmission],['Color',inv.color],['Origin',inv.country_of_origin],['Year',inv.vehicle_year]].filter(r=>r[1]).map(([l,v])=>`<div><span style="font-size:11px;color:var(--sub)">${l}</span><br><strong>${v}</strong></div>`).join('')}
+      </div>
+    </div>
+
+    <!-- Phase 1 -->
+    ${inv.first_installment_ugx>0?`
+    <div class="card">
+      <div class="sec-title" style="color:#0369A1">Phase 1 — Upfront Costs (1st Installment)</div>
+      ${inv.cif_usd?`<div class="phase-line"><span style="color:var(--sub)">CIF Value (Reference)</span><span>${usd(inv.cif_usd)} = ${ugx(inv.cif_usd*(inv.tax_exchange_rate||3834.56))}</span></div>`:''}
+      ${inv.tick_cf_mombasa&&inv.cf_mombasa_usd?`<div class="phase-line"><span>C&F Mombasa</span><span>${usd(inv.cf_mombasa_usd)} × ${fmt(inv.p1_exchange_rate,2)} = ${ugx(inv.cf_mombasa_usd*(inv.p1_exchange_rate||3834.56))}</span></div>`:''}
+      ${inv.tick_clearance&&inv.clearance_usd?`<div class="phase-line"><span>Clearance Mombasa→Kampala</span><span>${usd(inv.clearance_usd)} × ${fmt(inv.p1_exchange_rate,2)} = ${ugx(inv.clearance_usd*(inv.p1_exchange_rate||3834.56))}</span></div>`:''}
+      ${inv.tick_cf_kampala&&inv.cf_kampala_usd?`<div class="phase-line"><span>C&F Kampala</span><span>${usd(inv.cf_kampala_usd)} × ${fmt(inv.p1_exchange_rate,2)} = ${ugx(inv.cf_kampala_usd*(inv.p1_exchange_rate||3834.56))}</span></div>`:''}
+      ${inv.tick_tt&&inv.tt_usd?`<div class="phase-line"><span>TT Charges</span><span>${usd(inv.tt_usd)} × ${fmt(inv.p1_exchange_rate,2)} = ${ugx(inv.tt_usd*(inv.p1_exchange_rate||3834.56))}</span></div>`:''}
+      <div class="row-total p1" style="margin-top:8px"><span>1st Installment</span><span>${ugx(inv.first_installment_ugx)}</span></div>
+    </div>`:''}
+
+    <!-- URA Tax -->
+    ${inv.include_ura_tax&&inv.taxes_ura>0?`
+    <div class="card">
+      <div class="sec-title" style="color:var(--teal)">URA Taxes (Payable to Uganda Revenue Authority)</div>
+      ${td.cv?`<div class="phase-line"><span style="color:var(--sub)">Customs Value (CV = CIF × Rate)</span><span>${ugx(td.cv)}</span></div>`:''}
+      ${td.idf?`<div class="phase-line"><span>IDF (1%)</span><span>${ugx(td.idf)}</span></div>`:''}
+      ${td.impDuty?`<div class="phase-line"><span>Import Duty (${td.importDutyPct||25}%)</span><span>${ugx(td.impDuty)}</span></div>`:''}
+      ${td.vat?`<div class="phase-line"><span>VAT 18% on (CV + Import Duty)</span><span>${ugx(td.vat)}</span></div>`:''}
+      ${td.wht?`<div class="phase-line"><span>Withholding Tax (WHT 6%)</span><span>${ugx(td.wht)}</span></div>`:''}
+      ${td.infra?`<div class="phase-line"><span>Infrastructure Levy (1.5%)</span><span>${ugx(td.infra)}</span></div>`:''}
+      ${td.isOld&&td.envLevy?`<div class="phase-line"><span style="color:var(--orange)">Environmental Levy (vehicle >10 years)</span><span style="color:var(--orange)">${ugx(td.envLevy)}</span></div>`:''}
+      ${td.regFee?`<div class="phase-line"><span>Registration Fee</span><span>${ugx(td.regFee)}</span></div>`:''}
+      ${td.stamp?`<div class="phase-line"><span>Stamp Duty</span><span>${ugx(td.stamp)}</span></div>`:''}
+      ${td.regForm?`<div class="phase-line"><span>Registration Form</span><span>${ugx(td.regForm)}</span></div>`:''}
+      <div class="row-total ura" style="margin-top:8px"><span>URA Taxes Total</span><span>${ugx(inv.taxes_ura)}</span></div>
+    </div>`:''}
+
+    <!-- Phase 2 -->
+    ${inv.include_phase2&&inv.second_installment_ugx>0?`
+    <div class="card">
+      <div class="sec-title" style="color:var(--purple)">Phase 2 — Settlement / Registration (2nd Installment)</div>
+      ${inv.number_plates_fee?`<div class="phase-line"><span>Number Plates</span><span>${ugx(inv.number_plates_fee)}</span></div>`:''}
+      ${inv.third_party_insurance?`<div class="phase-line"><span>3rd Party Insurance</span><span>${ugx(inv.third_party_insurance)}</span></div>`:''}
+      ${inv.agency_fees?`<div class="phase-line"><span>Agency / Registration Fees</span><span>${ugx(inv.agency_fees)}</span></div>`:''}
+      <div class="row-total p2" style="margin-top:8px"><span>2nd Installment</span><span>${ugx(inv.second_installment_ugx)}</span></div>
+    </div>`:''}
+
+    <!-- Grand Total -->
+    <div class="grand-box">
+      <div><div style="font-size:12px;opacity:.8">Grand Total (Phase 1 + URA + Phase 2)</div></div>
+      <div class="amt">${ugx(inv.total_amount)}</div>
+    </div>
+
+    <!-- Payment status -->
+    <div class="card" style="margin-top:12px">
+      <div class="sec-title">Payment Status</div>
+      <div class="phase-line"><span>Total Invoice</span><span>${ugx(inv.total_amount)}</span></div>
+      <div class="phase-line"><span>Total Paid</span><span style="color:var(--green)">${ugx(inv.paid_amount||0)}</span></div>
+      <div class="phase-line"><span style="font-weight:700">Balance Due</span><span style="font-weight:700;color:${(inv.total_amount||0)-(inv.paid_amount||0)>0?'var(--red)':'var(--green)'};">${ugx((inv.total_amount||0)-(inv.paid_amount||0))}</span></div>
+    </div>
+
+    <!-- Payments list -->
+    ${payments.items.length>0?`
+    <div class="card">
+      <div class="sec-title">Payment History</div>
+      ${payments.items.map(p=>`
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
+          <div><strong>${ugx(p.amount)}</strong> · ${p.method||'Cash'}<br><span style="font-size:11px;color:var(--sub)">${fdate(p.payment_date)} ${p.reference?'· Ref: '+p.reference:''}</span></div>
+        </div>`).join('')}
+    </div>`:''}
+
+    <!-- Notes -->
+    ${inv.notes?`<div class="card"><div class="sec-title">Notes</div><p style="font-size:13px;color:var(--sub)">${inv.notes}</p></div>`:''}
+    ${inv.terms?`<div class="card"><div class="sec-title">Terms</div><p style="font-size:13px;color:var(--sub)">${inv.terms}</p></div>`:''}
+
+    <!-- Company footer -->
+    <div class="company-footer">
+      <strong>NSB Motors Ug</strong><br>
+      P.O. Box 198323, Kampala - Uganda<br>
+      📞 +256 704 624217 · +256 752 128406 · ✉ nsbmotorsug@gmail.com<br>
+      Bank: EQUITY BANK (Church House) · UGX A/C: 1021202801966 · USD A/C: 1021050006371 · SWIFT: EQBLUGKA<br>
+      Mobile Money: NSB Motors Ug · +256 752 128406
+    </div>`;
+
+  }catch(e){
+    id('detail-body').innerHTML=`<div class="card"><p style="color:var(--red)">Error: ${e.message}</p></div>`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// KEYBOARD
+// ═══════════════════════════════════════════════════════════
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    ['m-ura','m-client','m-payment'].forEach(m=>id(m).classList.remove('open'));
+  }
+});
+</script>
+</body>
+</html>

@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -20,7 +21,6 @@ class EmailQueueProcessor {
 
   Timer? _pollTimer;
   bool _isRunning = false;
-  RealtimeChannel? _realtimeChannel;
   final NotificationPreferencesService _prefsService = NotificationPreferencesService();
 
   /// Start processing email queue with realtime notifications
@@ -45,59 +45,9 @@ class EmailQueueProcessor {
     _subscribeToRealtime();
   }
 
-  /// Subscribe to Supabase Realtime for instant notifications
+  /// Subscribe to Supabase Realtime (Disabled, relying on polling)
   void _subscribeToRealtime() {
-    try {
-      final supabase = SupabaseService.client;
-      
-      // Subscribe to all inserts on the email queue table and filter in callback
-      _realtimeChannel = supabase
-          .channel('email_queue_changes')
-          .onPostgresChanges(
-            event: PostgresChangeEvent.insert,
-            schema: 'public',
-            table: 'email_queue',
-            callback: (payload) async {
-              try {
-                final data = payload.newRecord ?? {};
-                if ((data['status'] as String?) == 'pending') {
-                  print('🔔 New email detected via Realtime!');
-                  
-                  // Check if push notifications are enabled before showing
-                  if (_prefsService.shouldShowNotification()) {
-                    final subject = data['subject'] as String? ?? 'New email';
-                    final toEmail = data['to_email'] as String? ?? 'recipient';
-                    await NotificationService().show(
-                      'Email queued',
-                      'Subject: $subject\nTo: $toEmail',
-                    );
-                  } else {
-                    print('📵 Push notifications disabled - skipping notification');
-                  }
-                  
-                  // Check if email alerts are enabled for additional notification
-                  if (_prefsService.shouldShowEmailAlert()) {
-                    final subject = data['subject'] as String? ?? 'New email';
-                    await NotificationService().show(
-                      '📧 Email Alert',
-                      'New email ready to send: $subject',
-                    );
-                  }
-                  
-                  _processQueue();
-                }
-              } catch (e) {
-                print('⚠️ Realtime callback error: $e');
-              }
-            },
-          )
-          .subscribe();
-
-      print('✅ Email Realtime subscription active - instant notifications enabled');
-    } catch (e) {
-      print('⚠️ Error setting up email realtime subscription: $e');
-      // Continue with polling if realtime fails
-    }
+    print('🔌 Email realtime bypassed. Polling active.');
   }
 
   /// Stop processing email queue
@@ -105,11 +55,6 @@ class EmailQueueProcessor {
     _isRunning = false;
     _pollTimer?.cancel();
     _pollTimer = null;
-    
-    // Unsubscribe from realtime
-    _realtimeChannel?.unsubscribe();
-    _realtimeChannel = null;
-    
     print('🛑 Email queue processor stopped');
   }
 
@@ -121,15 +66,8 @@ class EmailQueueProcessor {
     if (!_isRunning) return;
 
     try {
-      final supabase = SupabaseService.client;
-
       // Get pending emails
-      final response = await supabase
-          .from('email_queue')
-          .select('*')
-          .eq('status', 'pending')
-          .order('created_at', ascending: true)
-          .limit(1);
+      final response = await SupabaseService.getPendingEmailMessages(limit: 1);
 
       if (response.isEmpty) {
         return; // No pending emails
@@ -148,13 +86,7 @@ class EmailQueueProcessor {
       // This polling method is just a fallback for processing
 
       // Mark as processing
-      await supabase
-          .from('email_queue')
-          .update({
-            'status': 'processing',
-            'updated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', emailId);
+      await SupabaseService.updateEmailQueueStatus(emailId, 'processing');
 
       // Send email (with PDF if provided)
       final success = pdfUrl != null && pdfUrl.isNotEmpty
@@ -163,14 +95,7 @@ class EmailQueueProcessor {
 
       if (success) {
         // Mark as sent
-        await supabase
-            .from('email_queue')
-            .update({
-              'status': 'sent',
-              'processed_at': DateTime.now().toIso8601String(),
-              'updated_at': DateTime.now().toIso8601String(),
-            })
-            .eq('id', emailId);
+        await SupabaseService.updateEmailQueueStatus(emailId, 'sent');
 
         // Store in email_messages table for tracking
         await _storeInMessagesTable(email);
@@ -178,15 +103,7 @@ class EmailQueueProcessor {
         print('✅ Email sent successfully: $emailId');
       } else {
         // Mark as failed
-        await supabase
-            .from('email_queue')
-            .update({
-              'status': 'failed',
-              'error_message': 'Failed to open email client',
-              'processed_at': DateTime.now().toIso8601String(),
-              'updated_at': DateTime.now().toIso8601String(),
-            })
-            .eq('id', emailId);
+        await SupabaseService.updateEmailQueueStatus(emailId, 'failed', errorMessage: 'Failed to open email client');
 
         print('❌ Failed to send email: $emailId');
       }
@@ -231,19 +148,24 @@ class EmailQueueProcessor {
     String pdfUrl,
   ) async {
     try {
-      print('📥 Downloading PDF from: $pdfUrl');
-      
-      // Download PDF from URL
-      final response = await http.get(Uri.parse(pdfUrl));
-      if (response.statusCode != 200) {
-        throw Exception('Failed to download PDF: HTTP ${response.statusCode}');
+      // Download PDF from URL or decode Base64 data URI
+      Uint8List bytes;
+      if (pdfUrl.startsWith('data:')) {
+        final base64String = pdfUrl.substring(pdfUrl.indexOf(',') + 1);
+        bytes = base64.decode(base64String);
+      } else {
+        final response = await http.get(Uri.parse(pdfUrl));
+        if (response.statusCode != 200) {
+          throw Exception('Failed to download PDF: HTTP ${response.statusCode}');
+        }
+        bytes = response.bodyBytes;
       }
 
       // Save PDF to temporary directory
       final tempDir = await getTemporaryDirectory();
       final fileName = 'invoice_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final pdfFile = File('${tempDir.path}/$fileName');
-      await pdfFile.writeAsBytes(response.bodyBytes);
+      await pdfFile.writeAsBytes(bytes);
       
       print('✅ PDF downloaded and saved: ${pdfFile.path}');
 
@@ -280,21 +202,7 @@ class EmailQueueProcessor {
   /// Store email in email_messages table for tracking
   Future<void> _storeInMessagesTable(Map<String, dynamic> queueEmail) async {
     try {
-      final supabase = SupabaseService.client;
-
-      await supabase.from('email_messages').insert({
-        'queue_id': queueEmail['id'],
-        'to_email': queueEmail['to_email'],
-        'subject': queueEmail['subject'],
-        'body': queueEmail['body'],
-        'pdf_url': queueEmail['pdf_url'],
-        'sent_by_machine_id': queueEmail['sent_by_machine_id'],
-        'sent_by_user_id': queueEmail['sent_by_user_id'],
-        'sent_by_user_name': queueEmail['sent_by_user_name'],
-        'sent_at': DateTime.now().toIso8601String(),
-        'status': 'sent',
-      });
-
+      await SupabaseService.storeEmailMessage(queueEmail);
       print('✅ Email stored in email_messages table');
     } catch (e) {
       print('⚠️ Error storing email in email_messages: $e');

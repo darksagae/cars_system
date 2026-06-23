@@ -1,12 +1,10 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'pairing_service.dart';
+import 'postgres_service.dart';
 
 /// WhatsApp Message Tracking Service
 /// 
-/// Tracks sent messages and handles contact forwarding via Supabase
+/// Tracks sent messages and handles contact forwarding via Neon PostgreSQL
 class WhatsAppMessageTrackingService {
   static final WhatsAppMessageTrackingService _instance = WhatsAppMessageTrackingService._internal();
   factory WhatsAppMessageTrackingService() => _instance;
@@ -17,9 +15,8 @@ class WhatsAppMessageTrackingService {
   static const String _userNameKey = 'whatsapp_user_name';
   static const String _userPhoneKey = 'whatsapp_user_phone';
 
-  // Get machine ID (use the same ID as the pairing service for consistency)
+  // Get machine ID
   Future<String> getMachineId() async {
-    // Use the same client ID as the pairing service to ensure consistency
     final pairingService = PairingService();
     return await pairingService.getOrCreateDeviceId();
   }
@@ -45,37 +42,34 @@ class WhatsAppMessageTrackingService {
     if (userName != null) await prefs.setString(_userNameKey, userName);
     if (userPhone != null) await prefs.setString(_userPhoneKey, userPhone);
     
-    // Update machine profile in Supabase
+    // Update machine profile in Neon Postgres
     await updateMachineProfile();
   }
 
-  // Update machine profile in Supabase
+  // Update machine profile in Neon Postgres
   Future<void> updateMachineProfile() async {
     try {
       final machineId = await getMachineId();
       final profile = await getUserProfile();
       
-      // Check if Supabase is initialized
-      SupabaseClient? supabase;
-      try {
-        supabase = Supabase.instance.client;
-      } catch (e) {
-        // Supabase not initialized, skip update
-        print('Supabase not initialized, skipping machine profile update');
-        return;
-      }
-      
-      // Upsert machine profile
-      if (supabase != null) {
-        await supabase.from('machine_profiles').upsert({
-        'machine_id': machineId,
-        'user_id': profile['userId'],
-        'user_name': profile['userName'],
-        'user_phone': profile['userPhone'],
-        'last_seen': DateTime.now().toIso8601String(),
-        'is_active': true,
-        });
-      }
+      await PostgresService.execute(
+        '''
+        INSERT INTO machine_profiles (machine_id, user_id, user_name, user_phone, last_seen, is_active)
+        VALUES (@machineId, @userId, @userName, @userPhone, NOW(), true)
+        ON CONFLICT (machine_id) DO UPDATE SET
+          user_id = EXCLUDED.user_id,
+          user_name = EXCLUDED.user_name,
+          user_phone = EXCLUDED.user_phone,
+          last_seen = NOW(),
+          is_active = true;
+        ''',
+        parameters: {
+          'machineId': machineId,
+          'userId': profile['userId'],
+          'userName': profile['userName'] ?? 'User',
+          'userPhone': profile['userPhone'],
+        },
+      );
     } catch (e) {
       print('Error updating machine profile: $e');
     }
@@ -88,28 +82,13 @@ class WhatsAppMessageTrackingService {
     try {
       final machineId = await getMachineId();
       
-      // Check if Supabase is initialized
-      SupabaseClient? supabase;
-      try {
-        supabase = Supabase.instance.client;
-      } catch (e) {
-        print('Supabase not initialized');
-        return [];
-      }
-      
-      if (supabase == null) return [];
-      
-      var queryBuilder = supabase!
-          .from('whatsapp_contacts')
-          .select('*')
-          .eq('forwarded_to_machine_id', machineId);
-      
+      String query = 'SELECT * FROM whatsapp_contacts WHERE forwarded_to_machine_id = @machineId';
       if (unacknowledgedOnly) {
-        queryBuilder = queryBuilder.eq('acknowledged', false);
+        query += ' AND acknowledged = false';
       }
-      
-      final response = await queryBuilder.order('forwarded_at', ascending: false);
-      return List<Map<String, dynamic>>.from(response);
+      query += ' ORDER BY forwarded_at DESC';
+
+      return await PostgresService.query(query, parameters: {'machineId': machineId});
     } catch (e) {
       print('Error getting forwarded contacts: $e');
       return [];
@@ -119,22 +98,14 @@ class WhatsAppMessageTrackingService {
   // Acknowledge contact (mark as seen)
   Future<void> acknowledgeContact(String contactId) async {
     try {
-      SupabaseClient? supabase;
-      try {
-        supabase = Supabase.instance.client;
-      } catch (e) {
-        print('Supabase not initialized');
-        return;
-      }
-      if (supabase == null) return;
-      
-      await supabase
-          .from('whatsapp_contacts')
-          .update({
-            'acknowledged': true,
-            'acknowledged_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', contactId);
+      await PostgresService.execute(
+        '''
+        UPDATE whatsapp_contacts
+        SET acknowledged = true, acknowledged_at = NOW()
+        WHERE id = @id::uuid
+        ''',
+        parameters: {'id': contactId},
+      );
     } catch (e) {
       print('Error acknowledging contact: $e');
     }
@@ -143,22 +114,14 @@ class WhatsAppMessageTrackingService {
   // Mark conversation as started
   Future<void> markConversationStarted(String contactId) async {
     try {
-      SupabaseClient? supabase;
-      try {
-        supabase = Supabase.instance.client;
-      } catch (e) {
-        print('Supabase not initialized');
-        return;
-      }
-      if (supabase == null) return;
-      
-      await supabase
-          .from('whatsapp_contacts')
-          .update({
-            'conversation_started': true,
-            'conversation_started_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', contactId);
+      await PostgresService.execute(
+        '''
+        UPDATE whatsapp_contacts
+        SET conversation_started = true, conversation_started_at = NOW()
+        WHERE id = @id::uuid
+        ''',
+        parameters: {'id': contactId},
+      );
     } catch (e) {
       print('Error marking conversation started: $e');
     }
@@ -172,41 +135,37 @@ class WhatsAppMessageTrackingService {
     try {
       final machineId = await getMachineId();
       
-      SupabaseClient? supabase;
-      try {
-        supabase = Supabase.instance.client;
-      } catch (e) {
-        print('Supabase not initialized');
-        return [];
-      }
-      if (supabase == null) return [];
-      
-      // Get messages sent by this machine
-      final messagesResponse = await supabase!
-          .from('whatsapp_messages')
-          .select('client_phone')
-          .eq('sent_by_machine_id', machineId);
-      
-      if (messagesResponse.isEmpty) return [];
-      
-      final clientPhones = messagesResponse.map((m) => m['client_phone'] as String).toSet();
-      
-      // Get replies for these clients
-      // Use 'or' with multiple 'eq' calls instead of 'in_'
-      var repliesQueryBuilder = supabase!
-          .from('whatsapp_replies')
-          .select('*');
-      
       if (clientPhone != null) {
-        repliesQueryBuilder = repliesQueryBuilder.eq('client_phone', clientPhone);
-      } else if (clientPhones.isNotEmpty) {
-        // Build OR condition for multiple phone numbers
-        final orConditions = clientPhones.map((phone) => 'client_phone.eq.$phone').join(',');
-        repliesQueryBuilder = repliesQueryBuilder.or(orConditions);
+        String query = 'SELECT * FROM whatsapp_replies WHERE client_phone = @phone';
+        if (unreadOnly) {
+          query += ' AND read = false'; // if 'read' column exists, otherwise bypass
+        }
+        query += ' ORDER BY received_at DESC';
+        
+        return await PostgresService.query(
+          query,
+          parameters: {'phone': clientPhone},
+        );
+      } else {
+        // Get messages sent by this machine
+        final messagesResponse = await PostgresService.query(
+          'SELECT DISTINCT client_phone FROM whatsapp_messages WHERE sent_by_machine_id = @machineId',
+          parameters: {'machineId': machineId},
+        );
+        if (messagesResponse.isEmpty) return [];
+        final clientPhones = messagesResponse.map((m) => m['client_phone'] as String).toList();
+        
+        String query = 'SELECT * FROM whatsapp_replies WHERE client_phone = ANY(@phones)';
+        if (unreadOnly) {
+          query += ' AND read = false';
+        }
+        query += ' ORDER BY received_at DESC';
+
+        return await PostgresService.query(
+          query,
+          parameters: {'phones': clientPhones},
+        );
       }
-      
-      final replies = await repliesQueryBuilder.order('received_at', ascending: false);
-      return List<Map<String, dynamic>>.from(replies);
     } catch (e) {
       print('Error getting replies: $e');
       return [];

@@ -1,10 +1,9 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'postgres_service.dart';
 import 'whatsapp_message_tracking_service.dart';
 
 /// Email Queue Service
 /// 
-/// Stores emails in Supabase queue for mobile app to process.
-/// Works from anywhere - no SMTP required!
+/// Stores emails in Neon PostgreSQL queue for mobile app to process.
 class EmailQueueService {
   static final EmailQueueService _instance = EmailQueueService._internal();
   factory EmailQueueService() => _instance;
@@ -15,43 +14,37 @@ class EmailQueueService {
     required String toEmail,
     required String subject,
     required String body,
-    String? pdfUrl, // Supabase Storage URL
+    String? pdfUrl, // Base64 or URL
   }) async {
     try {
-      // Check if Supabase is initialized
-      SupabaseClient? supabase;
-      try {
-        supabase = Supabase.instance.client;
-      } catch (e) {
-        throw Exception('Supabase not initialized: $e');
-      }
-      
-      if (supabase == null) {
-        throw Exception('Supabase client not available');
-      }
-
       // Get machine and user info
       final trackingService = WhatsAppMessageTrackingService();
       final machineId = await trackingService.getMachineId();
       final userProfile = await trackingService.getUserProfile();
 
-      // Insert into queue
-      final response = await supabase
-          .from('email_queue')
-          .insert({
-            'to_email': toEmail,
-            'subject': subject,
-            'body': body,
-            'pdf_url': pdfUrl,
-            'sent_by_machine_id': machineId,
-            'sent_by_user_id': userProfile['userId'],
-            'sent_by_user_name': userProfile['userName'],
-            'status': 'pending',
-          })
-          .select('id')
-          .single();
+      // Insert into queue via PostgresService
+      final response = await PostgresService.query(
+        '''
+        INSERT INTO email_queue (to_email, subject, body, pdf_url, sent_by_machine_id, sent_by_user_id, sent_by_user_name, status)
+        VALUES (@toEmail, @subject, @body, @pdfUrl, @sentByMachineId, @sentByUserId, @sentByUserName, 'pending')
+        RETURNING id
+        ''',
+        parameters: {
+          'toEmail': toEmail,
+          'subject': subject,
+          'body': body,
+          'pdfUrl': pdfUrl,
+          'sentByMachineId': machineId,
+          'sentByUserId': userProfile['userId'],
+          'sentByUserName': userProfile['userName'],
+        },
+      );
 
-      final queueId = response['id'] as String;
+      if (response.isEmpty) {
+        throw Exception('Insert returned empty result');
+      }
+
+      final queueId = response.first['id'] as String;
       print('✅ Email queued successfully: $queueId');
       print('📱 Mobile app will process this email automatically');
       
@@ -65,22 +58,13 @@ class EmailQueueService {
   /// Check email status
   Future<Map<String, dynamic>?> getEmailStatus(String queueId) async {
     try {
-      SupabaseClient? supabase;
-      try {
-        supabase = Supabase.instance.client;
-      } catch (e) {
-        return null;
-      }
-      
-      if (supabase == null) return null;
+      final response = await PostgresService.query(
+        'SELECT * FROM email_queue WHERE id = @id::uuid LIMIT 1',
+        parameters: {'id': queueId},
+      );
 
-      final response = await supabase
-          .from('email_queue')
-          .select('*')
-          .eq('id', queueId)
-          .maybeSingle();
-
-      return response;
+      if (response.isEmpty) return null;
+      return response.first;
     } catch (e) {
       print('Error getting email status: $e');
       return null;
@@ -119,5 +103,3 @@ class EmailQueueService {
     throw Exception('Email processing timeout');
   }
 }
-
-

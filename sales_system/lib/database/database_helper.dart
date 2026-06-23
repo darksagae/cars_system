@@ -1,7 +1,24 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'migration_helper.dart';
-import 'package:path/path.dart';
+import 'package:path/path.dart' as path;
+
+// #region agent log
+void _agentDebugLog(String hypothesisId, String message, Map<String, Object?> data) {
+  try {
+    final payload = jsonEncode({
+      'sessionId': '60ef30',
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'hypothesisId': hypothesisId,
+      'message': message,
+      'data': data,
+    });
+    File('/home/darksagae/Desktop/NSB/.cursor/debug-60ef30.log')
+        .writeAsStringSync('$payload\n', mode: FileMode.append);
+  } catch (_) {}
+}
+// #endregion
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -21,33 +38,114 @@ class DatabaseHelper {
     return _database!;
   }
 
+  /// Call before invoice writes when [onOpen] may not have run (e.g. hot reload kept a stale connection).
+  Future<void> repairInvoicesIsFinalizedIfNeeded() async {
+    // #region agent log
+    _agentDebugLog('H2', 'repairInvoicesIsFinalizedIfNeeded_called', {});
+    // #endregion
+    final db = await database;
+    await _ensureInvoicesIsFinalizedColumn(db);
+  }
+
   Future<Database> _initDatabase() async {
     try {
-      // Use a more persistent path for Linux
-      String path;
+      String dbPath;
+      String dbDir;
+      
       if (Platform.isLinux) {
         // Use home directory for Linux
         final homeDir = Platform.environment['HOME'] ?? '/tmp';
-        path = join(homeDir, 'sales_system.db');
+        dbDir = homeDir;
+        dbPath = path.join(homeDir, 'sales_system.db');
+      } else if (Platform.isWindows) {
+        // Use AppData\Local for Windows (more reliable than getDatabasesPath)
+        final appDataDir = Platform.environment['LOCALAPPDATA'] ?? 
+                          Platform.environment['APPDATA'] ?? 
+                          path.join(Platform.environment['USERPROFILE'] ?? 'C:\\Users\\Public', 'AppData', 'Local');
+        dbDir = path.join(appDataDir, 'NSB_Motors_Sales_System');
+        dbPath = path.join(dbDir, 'sales_system.db');
       } else {
-        path = join(await getDatabasesPath(), 'sales_system.db');
+        // For macOS and other platforms, use getDatabasesPath
+        dbDir = await getDatabasesPath();
+        dbPath = path.join(dbDir, 'sales_system.db');
       }
-      print('Initializing database at: $path');
+      
+      // CRITICAL: Ensure the directory exists before opening the database
+      final dbDirectory = Directory(dbDir);
+      if (!await dbDirectory.exists()) {
+        print('Creating database directory: $dbDir');
+        await dbDirectory.create(recursive: true);
+        print('Database directory created successfully');
+      }
+      
+      print('Initializing database at: $dbPath');
+      print('Database directory: $dbDir');
+      
+      // Verify directory exists and is writable
+      if (!await dbDirectory.exists()) {
+        throw Exception('Failed to create database directory: $dbDir');
+      }
       
       final db = await databaseFactory.openDatabase(
-      path,
+        dbPath,
         options: OpenDatabaseOptions(
-          version: 6,
-      onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
+          version: 10,
+          onCreate: _onCreate,
+          onUpgrade: _onUpgrade,
+          onOpen: _onDatabaseOpen,
         ),
       );
       
-      print('Database initialized successfully');
+      print('Database initialized successfully at: $dbPath');
       return db;
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('Error initializing database: $e');
+      print('Stack trace: $stackTrace');
       rethrow;
+    }
+  }
+
+  /// Ensures [isFinalized] exists even if [onUpgrade] did not run (e.g. user_version already 10).
+  Future<void> _onDatabaseOpen(Database db) async {
+    await _ensureInvoicesIsFinalizedColumn(db);
+  }
+
+  /// Idempotent: adds [isFinalized] when missing (repairs partial migrations).
+  Future<void> _ensureInvoicesIsFinalizedColumn(Database db) async {
+    // #region agent log
+    _agentDebugLog('H1', 'onOpen_pragma_invoices', {'stage': 'before_check'});
+    // #endregion
+    try {
+      final tables = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='invoices'",
+      );
+      if (tables.isEmpty) return;
+
+      final cols = await db.rawQuery('PRAGMA table_info(invoices)');
+      final has = cols.any((r) => r['name'] == 'isFinalized');
+      // #region agent log
+      _agentDebugLog('H1', 'onOpen_isFinalized_column', {
+        'hasColumn': has,
+        'columnCount': cols.length,
+      });
+      // #endregion
+      if (has) return;
+
+      await db.execute(
+        'ALTER TABLE invoices ADD COLUMN isFinalized INTEGER DEFAULT 0',
+      );
+      print('✅ Repaired invoices: added isFinalized (onOpen lazy migration)');
+      // #region agent log
+      _agentDebugLog('H1', 'onOpen_alter_success', {'repaired': true});
+      // #endregion
+    } catch (e, st) {
+      print('❌ onOpen isFinalized repair failed: $e');
+      // #region agent log
+      _agentDebugLog('H1', 'onOpen_alter_failed', {
+        'error': e.toString(),
+        'stack': st.toString().split('\n').take(4).join('|'),
+      });
+      // #endregion
     }
   }
 
@@ -118,6 +216,7 @@ class DatabaseHelper {
         stockNo TEXT,
         vehicleMake TEXT,
         vehicleModel TEXT,
+        vehicleModelSuffix TEXT DEFAULT '',
         vehicleYear INTEGER DEFAULT 0,
         chassisNo TEXT,
         engineSize TEXT,
@@ -149,6 +248,7 @@ class DatabaseHelper {
         notes TEXT,
         terms TEXT,
         images TEXT,
+        isFinalized INTEGER NOT NULL DEFAULT 0,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL,
         FOREIGN KEY (customerId) REFERENCES customers (id) ON DELETE CASCADE
@@ -597,6 +697,301 @@ class DatabaseHelper {
       }
       
       print('Database upgraded to version 6 - Invoice columns added');
+    }
+
+    if (oldVersion < 7) {
+      // Recalculate invoice totals excluding CIF reference items.
+      // CIF is used only as an input/reference for URA tax calculations and must NOT be included in invoice totals.
+      try {
+        await db.execute('''
+          UPDATE invoices
+          SET
+            subtotal = COALESCE((
+              SELECT SUM(ii.price * ii.quantity)
+              FROM invoice_items ii
+              WHERE ii.invoiceId = invoices.id
+                AND NOT (
+                  LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                  AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                )
+            ), 0.0),
+            discountAmount = COALESCE((
+              SELECT SUM((ii.price * ii.quantity) * (COALESCE(ii.discount, 0.0) / 100.0))
+              FROM invoice_items ii
+              WHERE ii.invoiceId = invoices.id
+                AND NOT (
+                  LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                  AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                )
+            ), 0.0),
+            taxAmount = COALESCE((
+              SELECT SUM(
+                ((ii.price * ii.quantity) - ((ii.price * ii.quantity) * (COALESCE(ii.discount, 0.0) / 100.0)))
+                * (COALESCE(ii.taxRate, 0.0) / 100.0)
+              )
+              FROM invoice_items ii
+              WHERE ii.invoiceId = invoices.id
+                AND NOT (
+                  LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                  AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                )
+            ), 0.0),
+            totalAmount = (
+              COALESCE((
+                SELECT SUM(ii.price * ii.quantity)
+                FROM invoice_items ii
+                WHERE ii.invoiceId = invoices.id
+                  AND NOT (
+                    LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                    AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                  )
+              ), 0.0)
+              - COALESCE((
+                SELECT SUM((ii.price * ii.quantity) * (COALESCE(ii.discount, 0.0) / 100.0))
+                FROM invoice_items ii
+                WHERE ii.invoiceId = invoices.id
+                  AND NOT (
+                    LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                    AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                  )
+              ), 0.0)
+              + COALESCE((
+                SELECT SUM(
+                  ((ii.price * ii.quantity) - ((ii.price * ii.quantity) * (COALESCE(ii.discount, 0.0) / 100.0)))
+                  * (COALESCE(ii.taxRate, 0.0) / 100.0)
+                )
+                FROM invoice_items ii
+                WHERE ii.invoiceId = invoices.id
+                  AND NOT (
+                    LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                    AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                  )
+              ), 0.0)
+            ),
+            balanceAmount = (
+              (
+                COALESCE((
+                  SELECT SUM(ii.price * ii.quantity)
+                  FROM invoice_items ii
+                  WHERE ii.invoiceId = invoices.id
+                    AND NOT (
+                      LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                      AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                    )
+                ), 0.0)
+                - COALESCE((
+                  SELECT SUM((ii.price * ii.quantity) * (COALESCE(ii.discount, 0.0) / 100.0))
+                  FROM invoice_items ii
+                  WHERE ii.invoiceId = invoices.id
+                    AND NOT (
+                      LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                      AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                    )
+                ), 0.0)
+                + COALESCE((
+                  SELECT SUM(
+                    ((ii.price * ii.quantity) - ((ii.price * ii.quantity) * (COALESCE(ii.discount, 0.0) / 100.0)))
+                    * (COALESCE(ii.taxRate, 0.0) / 100.0)
+                  )
+                  FROM invoice_items ii
+                  WHERE ii.invoiceId = invoices.id
+                    AND NOT (
+                      LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                      AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                    )
+                ), 0.0)
+              )
+              - COALESCE(paidAmount, 0.0)
+            )
+        ''');
+        print('✅ Recalculated invoice totals excluding CIF reference items (v7)');
+      } catch (e) {
+        print('⚠️ Failed to recalculate invoice totals excluding CIF reference items: $e');
+      }
+    }
+
+    if (oldVersion < 8) {
+      // Ensure URA taxes are always included in totals even when Phase 2 extras are not included.
+      // - Compute taxesURA for invoices that can be derived from CIF (carPriceUSD) + exchangeRate + vehicleYear + invoiceDate
+      // - Ensure a "Taxes payable to URA" line item exists when taxesURA > 0
+      // - Recompute totals excluding CIF reference items (but including URA taxes item)
+      try {
+        // Compute taxesURA where missing (use same base formula as Invoice Details screen).
+        await db.execute('''
+          UPDATE invoices
+          SET taxesURA = (
+            -- CV (UGX)
+            (carPriceUSD * exchangeRate) * 0.25 -- Import Duty
+            + ((carPriceUSD * exchangeRate) + ((carPriceUSD * exchangeRate) * 0.25)) * 0.18 -- VAT
+            + (carPriceUSD * exchangeRate) * 0.06 -- WHT
+            + (carPriceUSD * exchangeRate) * 0.015 -- Infrastructure Levy
+            + (carPriceUSD * exchangeRate) * 0.01 -- IDF
+            + CASE
+                WHEN vehicleYear > 0
+                 AND CAST(SUBSTR(invoiceDate, 1, 4) AS INTEGER) > 0
+                 AND vehicleYear <= (CAST(SUBSTR(invoiceDate, 1, 4) AS INTEGER) - 10)
+                THEN (carPriceUSD * exchangeRate) * 0.50
+                ELSE 0.0
+              END
+            + 1500000.0 -- Registration Fee
+            + 18000.0 -- Stamp Duty
+            + 35000.0 -- Reg Form
+          )
+          WHERE COALESCE(taxesURA, 0.0) = 0.0
+            AND COALESCE(carPriceUSD, 0.0) > 0.0
+            AND COALESCE(exchangeRate, 0.0) > 0.0
+            AND COALESCE(vehicleYear, 0) > 0
+        ''');
+
+        // Insert missing URA tax item when taxesURA is present.
+        await db.execute('''
+          INSERT INTO invoice_items (invoiceId, productId, productName, description, price, quantity, taxRate, discount)
+          SELECT
+            i.id,
+            NULL,
+            'Taxes payable to URA',
+            'Import Duty, VAT, WHT, Environmental & Infrastructure Levy, IDF, Stamp, Reg Form',
+            i.taxesURA,
+            1,
+            0.0,
+            0.0
+          FROM invoices i
+          WHERE COALESCE(i.taxesURA, 0.0) > 0.0
+            AND NOT EXISTS (
+              SELECT 1
+              FROM invoice_items ii
+              WHERE ii.invoiceId = i.id
+                AND LOWER(COALESCE(ii.productName, '')) = 'taxes payable to ura'
+            )
+        ''');
+
+        // Recompute totals excluding CIF reference items.
+        await db.execute('''
+          UPDATE invoices
+          SET
+            subtotal = COALESCE((
+              SELECT SUM(ii.price * ii.quantity)
+              FROM invoice_items ii
+              WHERE ii.invoiceId = invoices.id
+                AND NOT (
+                  LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                  AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                )
+            ), 0.0),
+            discountAmount = COALESCE((
+              SELECT SUM((ii.price * ii.quantity) * (COALESCE(ii.discount, 0.0) / 100.0))
+              FROM invoice_items ii
+              WHERE ii.invoiceId = invoices.id
+                AND NOT (
+                  LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                  AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                )
+            ), 0.0),
+            taxAmount = COALESCE((
+              SELECT SUM(
+                ((ii.price * ii.quantity) - ((ii.price * ii.quantity) * (COALESCE(ii.discount, 0.0) / 100.0)))
+                * (COALESCE(ii.taxRate, 0.0) / 100.0)
+              )
+              FROM invoice_items ii
+              WHERE ii.invoiceId = invoices.id
+                AND NOT (
+                  LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                  AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                )
+            ), 0.0),
+            totalAmount = (
+              COALESCE((
+                SELECT SUM(ii.price * ii.quantity)
+                FROM invoice_items ii
+                WHERE ii.invoiceId = invoices.id
+                  AND NOT (
+                    LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                    AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                  )
+              ), 0.0)
+              - COALESCE((
+                SELECT SUM((ii.price * ii.quantity) * (COALESCE(ii.discount, 0.0) / 100.0))
+                FROM invoice_items ii
+                WHERE ii.invoiceId = invoices.id
+                  AND NOT (
+                    LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                    AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                  )
+              ), 0.0)
+              + COALESCE((
+                SELECT SUM(
+                  ((ii.price * ii.quantity) - ((ii.price * ii.quantity) * (COALESCE(ii.discount, 0.0) / 100.0)))
+                  * (COALESCE(ii.taxRate, 0.0) / 100.0)
+                )
+                FROM invoice_items ii
+                WHERE ii.invoiceId = invoices.id
+                  AND NOT (
+                    LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                    AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                  )
+              ), 0.0)
+            ),
+            balanceAmount = (
+              (
+                COALESCE((
+                  SELECT SUM(ii.price * ii.quantity)
+                  FROM invoice_items ii
+                  WHERE ii.invoiceId = invoices.id
+                    AND NOT (
+                      LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                      AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                    )
+                ), 0.0)
+                - COALESCE((
+                  SELECT SUM((ii.price * ii.quantity) * (COALESCE(ii.discount, 0.0) / 100.0))
+                  FROM invoice_items ii
+                  WHERE ii.invoiceId = invoices.id
+                    AND NOT (
+                      LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                      AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                    )
+                ), 0.0)
+                + COALESCE((
+                  SELECT SUM(
+                    ((ii.price * ii.quantity) - ((ii.price * ii.quantity) * (COALESCE(ii.discount, 0.0) / 100.0)))
+                    * (COALESCE(ii.taxRate, 0.0) / 100.0)
+                  )
+                  FROM invoice_items ii
+                  WHERE ii.invoiceId = invoices.id
+                    AND NOT (
+                      LOWER(COALESCE(ii.productName, '')) LIKE 'cif (%'
+                      AND LOWER(COALESCE(ii.description, '')) LIKE '%reference%'
+                    )
+                ), 0.0)
+              )
+              - COALESCE(paidAmount, 0.0)
+            )
+        ''');
+
+        print('✅ Ensured URA taxes included in totals and backfilled missing URA items (v8)');
+      } catch (e) {
+        print('⚠️ Failed v8 migration to include URA taxes in totals: $e');
+      }
+    }
+
+    if (oldVersion < 9) {
+      try {
+        await db.execute('ALTER TABLE invoices ADD COLUMN vehicleModelSuffix TEXT DEFAULT \'\'');
+        print('✅ Added vehicleModelSuffix column to invoices (v9)');
+      } catch (e) {
+        print('Column vehicleModelSuffix might already exist: $e');
+      }
+    }
+
+    if (oldVersion < 10) {
+      try {
+        await db.execute(
+          'ALTER TABLE invoices ADD COLUMN isFinalized INTEGER DEFAULT 0',
+        );
+        print('✅ Added isFinalized column to invoices (v10)');
+      } catch (e) {
+        print('Column isFinalized might already exist: $e');
+      }
     }
   }
 

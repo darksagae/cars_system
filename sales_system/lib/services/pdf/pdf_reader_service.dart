@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:path/path.dart' as path;
 import '../../database/database_helper.dart';
 
 class PdfReaderService {
@@ -50,9 +51,67 @@ class PdfReaderService {
     }
   }
 
+  /// Get the path to pdftotext executable
+  Future<String?> _getPdftotextPath() async {
+    if (Platform.isWindows) {
+      // On Windows, look for pdftotext.exe in common locations
+      final executable = Platform.resolvedExecutable;
+      final executableDir = path.dirname(executable);
+      
+      // Check common locations relative to executable
+      final possiblePaths = [
+        path.join(executableDir, 'pdftotext.exe'),
+        path.join(executableDir, 'poppler', 'pdftotext.exe'),
+        path.join(executableDir, 'poppler', 'poppler-25.12.0', 'Library', 'bin', 'pdftotext.exe'),
+        path.join(executableDir, 'bundled_deps', 'pdftotext.exe'),
+        path.join(executableDir, '..', 'poppler', 'pdftotext.exe'),
+        path.join(executableDir, '..', 'poppler', 'poppler-25.12.0', 'Library', 'bin', 'pdftotext.exe'),
+      ];
+      
+      for (final possiblePath in possiblePaths) {
+        final file = File(possiblePath);
+        if (await file.exists()) {
+          print('✅ Found pdftotext.exe at: $possiblePath');
+          return possiblePath;
+        }
+      }
+      
+      // Try system PATH as fallback
+      try {
+        final result = await Process.run('pdftotext.exe', ['-v'], runInShell: true);
+        if (result.exitCode == 0 || result.stderr.toString().contains('pdftotext')) {
+          return 'pdftotext.exe';
+        }
+      } catch (_) {
+        // Continue to return null
+      }
+      
+      print('❌ pdftotext.exe not found in any location');
+      return null;
+    } else {
+      // On Linux/Mac, use system pdftotext
+      try {
+        final result = await Process.run('pdftotext', ['-v']);
+        if (result.exitCode == 0 || result.stderr.toString().contains('pdftotext')) {
+          return 'pdftotext';
+        }
+      } catch (_) {
+        return null;
+      }
+      return null;
+    }
+  }
+
   /// Extract text content from PDF bytes
   Future<String> _extractTextFromPdf(Uint8List pdfBytes) async {
     try {
+      // Get pdftotext path
+      final pdftotextPath = await _getPdftotextPath();
+      if (pdftotextPath == null) {
+        print('⚠️ pdftotext not found, using fallback method');
+        return await _fallbackTextExtraction(pdfBytes);
+      }
+      
       // Use system pdftotext command for proper PDF text extraction
       final tempDir = Directory.systemTemp;
       final tempFile = File('${tempDir.path}/temp_pdf.pdf');
@@ -61,13 +120,24 @@ class PdfReaderService {
       // Write PDF bytes to temporary file
       await tempFile.writeAsBytes(pdfBytes);
       
+      // Get the directory where pdftotext.exe is located (for DLL loading)
+      final pdftotextDir = path.dirname(pdftotextPath);
+      
+      print('Running pdftotext: $pdftotextPath');
+      print('Working directory: $pdftotextDir');
+      
       // Use pdftotext to extract text with layout preservation
-      final result = await Process.run('pdftotext', [
-        '-layout',
-        '-l', '50', // Extract first 50 pages to get a good sample
-        tempFile.path,
-        outputFile.path,
-      ]);
+      final result = await Process.run(
+        pdftotextPath,
+        [
+          '-layout',
+          '-l', '50', // Extract first 50 pages to get a good sample
+          tempFile.path,
+          outputFile.path,
+        ],
+        workingDirectory: pdftotextDir, // Set working directory so DLLs can be found
+        runInShell: Platform.isWindows,
+      );
       
       if (result.exitCode == 0 && await outputFile.exists()) {
         final extractedText = await outputFile.readAsString();
@@ -79,7 +149,10 @@ class PdfReaderService {
         print('✅ Successfully extracted text from PDF using pdftotext');
         return extractedText;
       } else {
-        print('⚠️ pdftotext failed, trying fallback method');
+        print('⚠️ pdftotext failed with exit code: ${result.exitCode}');
+        print('stderr: ${result.stderr}');
+        print('stdout: ${result.stdout}');
+        print('⚠️ Trying fallback method');
         return await _fallbackTextExtraction(pdfBytes);
       }
     } catch (e) {

@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "sales_system" "\0"
+            VALUE "FileDescription", "NSB Motors" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "sales_system" "\0"
+            VALUE "InternalName", "nsb_motors" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2025 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "sales_system.exe" "\0"
-            VALUE "ProductName", "sales_system" "\0"
+            VALUE "OriginalFilename", "nsb_motors.exe" "\0"
+            VALUE "ProductName", "NSB Motors" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

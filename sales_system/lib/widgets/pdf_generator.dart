@@ -1,8 +1,9 @@
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
+import 'package:open_filex/open_filex.dart';
 import '../models/invoice.dart';
 import '../services/pdf/pdf_service.dart';
 import 'glass_container.dart';
@@ -247,15 +248,17 @@ class _PDFGeneratorState extends State<PDFGenerator> {
   }
 
   Future<void> _previewPDF() async {
-    setState(() {
-      _isGenerating = true;
-    });
+    if (_isGenerating) return;
+    _isGenerating = true;
+    setState(() {});
 
     try {
       final pdfBytes = await _pdfService.generateInvoicePDF(widget.invoice);
       await Printing.layoutPdf(
         onLayout: (format) async => pdfBytes,
         name: '${widget.invoice.invoiceNumber}.pdf',
+        format: PdfPageFormat.a4,
+        dynamicLayout: false,
       );
     } catch (e) {
       _showError('Error previewing PDF: $e');
@@ -267,9 +270,9 @@ class _PDFGeneratorState extends State<PDFGenerator> {
   }
 
   Future<void> _printPDF() async {
-    setState(() {
-      _isGenerating = true;
-    });
+    if (_isGenerating) return;
+    _isGenerating = true;
+    setState(() {});
 
     try {
       await _pdfService.printPDF(widget.invoice);
@@ -284,13 +287,14 @@ class _PDFGeneratorState extends State<PDFGenerator> {
   }
 
   Future<void> _savePDF() async {
-    setState(() {
-      _isGenerating = true;
-    });
+    if (_isGenerating) return;
+    _isGenerating = true;
+    setState(() {});
 
     try {
       final filePath = await _pdfService.savePDFToFile(widget.invoice);
-      _showSuccess('PDF saved to: $filePath');
+      if (!mounted) return;
+      _showSuccessWithOpen('PDF saved to Downloads.', filePath);
     } catch (e) {
       _showError('Error saving PDF: $e');
     } finally {
@@ -300,10 +304,32 @@ class _PDFGeneratorState extends State<PDFGenerator> {
     }
   }
 
+  void _showSuccessWithOpen(String message, String filePath) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: GoogleFonts.poppins(),
+        ),
+        backgroundColor: Colors.green.withOpacity(0.8),
+        action: SnackBarAction(
+          label: 'Open',
+          textColor: Colors.white,
+          onPressed: () async {
+            final result = await OpenFilex.open(filePath);
+            if (result.type != ResultType.done && mounted) {
+              _showError(result.message);
+            }
+          },
+        ),
+      ),
+    );
+  }
+
   Future<void> _sharePDF() async {
-    setState(() {
-      _isGenerating = true;
-    });
+    if (_isGenerating) return;
+    _isGenerating = true;
+    setState(() {});
 
     try {
       await _pdfService.sharePDF(widget.invoice);

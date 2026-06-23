@@ -2,9 +2,9 @@ import 'package:mailer/mailer.dart';
 import 'package:mailer/smtp_server.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:convert';
 import 'email_queue_service.dart';
 
 class EmailService {
@@ -90,7 +90,7 @@ class EmailService {
     return _isConfiguredCache ?? false;
   }
 
-  // Synchronous getter for backward compatibility (may return false if not loaded yet)
+  // Synchronous getter for backward compatibility
   bool get isConfiguredSync => _isConfiguredCache ?? false;
 
   // Send invoice email via queue (mobile app will send it)
@@ -103,9 +103,8 @@ class EmailService {
     required String companyName,
     String? pdfPath,
     Uint8List? pdfBytes,
-    bool useQueue = true, // Use queue by default, set to false to use SMTP
+    bool useQueue = true,
   }) async {
-    // Use queue system (mobile app sends) by default
     if (useQueue) {
       return await _sendInvoiceEmailViaQueue(
         recipientEmail: recipientEmail,
@@ -119,8 +118,6 @@ class EmailService {
       );
     }
 
-    // Fallback to SMTP if queue is disabled
-    // Load configuration from SharedPreferences
     await _loadConfig();
     
     if (!(_isConfiguredCache ?? false)) {
@@ -148,13 +145,11 @@ class EmailService {
           companyName: companyName,
         );
 
-      // Attach PDF if provided (either as path or bytes)
       if (pdfPath != null) {
         message.attachments = [
           FileAttachment(File(pdfPath))
         ];
       } else if (pdfBytes != null) {
-        // Create temporary file from bytes
         final tempDir = await getTemporaryDirectory();
         final tempFile = File('${tempDir.path}/$invoiceNumber.pdf');
         await tempFile.writeAsBytes(pdfBytes);
@@ -186,22 +181,9 @@ class EmailService {
     try {
       String? pdfUrl;
 
-      // Upload PDF to Supabase Storage if provided
       if (pdfPath != null || pdfBytes != null) {
-        print('📤 Uploading PDF to Supabase Storage...');
+        print('📤 Encoding PDF to Base64...');
         
-        SupabaseClient? supabase;
-        try {
-          supabase = Supabase.instance.client;
-        } catch (e) {
-          throw Exception('Supabase not initialized: $e');
-        }
-        
-        if (supabase == null) {
-          throw Exception('Supabase client not available');
-        }
-
-        // Read PDF bytes
         Uint8List pdfData;
         if (pdfBytes != null) {
           pdfData = pdfBytes;
@@ -215,29 +197,11 @@ class EmailService {
           throw Exception('No PDF provided');
         }
 
-        // Upload to Supabase Storage
-        final fileName = 'emails/${DateTime.now().millisecondsSinceEpoch}_invoice_$invoiceNumber.pdf';
-        
-        await supabase.storage
-            .from('whatsapp_attachments') // Reuse same bucket
-            .uploadBinary(
-              fileName,
-              pdfData,
-              fileOptions: const FileOptions(
-                contentType: 'application/pdf',
-                upsert: false,
-              ),
-            );
-        
-        // Get public URL
-        pdfUrl = supabase.storage
-            .from('whatsapp_attachments')
-            .getPublicUrl(fileName);
-        
-        print('✅ PDF uploaded successfully: $pdfUrl');
+        final base64String = base64Encode(pdfData);
+        pdfUrl = 'data:application/pdf;base64,$base64String';
+        print('✅ PDF encoded successfully');
       }
 
-      // Generate email body
       final emailBody = _generateInvoiceEmailHtml(
         recipientName: recipientName,
         invoiceNumber: invoiceNumber,
@@ -246,7 +210,6 @@ class EmailService {
         companyName: companyName,
       );
 
-      // Queue email
       final queueService = EmailQueueService();
       final queueId = await queueService.queueEmail(
         toEmail: recipientEmail,
@@ -258,13 +221,12 @@ class EmailService {
       print('✅ Email queued successfully: $queueId');
       print('📱 Mobile app will send this email automatically');
 
-      // Wait for processing
       try {
         await queueService.waitForProcessing(queueId, timeout: const Duration(seconds: 30));
         return true;
       } catch (e) {
         print('⚠️ Email queued but not yet processed: $e');
-        return true; // Return true as email is queued
+        return true;
       }
     } catch (e) {
       print('Error queueing email: $e');
@@ -281,9 +243,8 @@ class EmailService {
     required String companyName,
     String? pdfPath,
     Uint8List? pdfBytes,
-    bool useQueue = true, // Use queue by default, set to false to use SMTP
+    bool useQueue = true,
   }) async {
-    // Use queue system (mobile app sends) by default
     if (useQueue) {
       return await _sendPaymentReminderEmailViaQueue(
         recipientEmail: recipientEmail,
@@ -296,8 +257,6 @@ class EmailService {
       );
     }
 
-    // Fallback to SMTP if queue is disabled
-    // Load configuration from SharedPreferences
     await _loadConfig();
     
     if (!(_isConfiguredCache ?? false)) {
@@ -324,13 +283,11 @@ class EmailService {
           companyName: companyName,
         );
 
-      // Attach PDF if provided (either as path or bytes)
       if (pdfPath != null) {
         message.attachments = [
           FileAttachment(File(pdfPath))
         ];
       } else if (pdfBytes != null) {
-        // Create temporary file from bytes
         final tempDir = await getTemporaryDirectory();
         final tempFile = File('${tempDir.path}/${invoiceNumber}_reminder.pdf');
         await tempFile.writeAsBytes(pdfBytes);
@@ -361,22 +318,9 @@ class EmailService {
     try {
       String? pdfUrl;
 
-      // Upload PDF to Supabase Storage if provided
       if (pdfPath != null || pdfBytes != null) {
-        print('📤 Uploading PDF to Supabase Storage...');
+        print('📤 Encoding PDF to Base64...');
         
-        SupabaseClient? supabase;
-        try {
-          supabase = Supabase.instance.client;
-        } catch (e) {
-          throw Exception('Supabase not initialized: $e');
-        }
-        
-        if (supabase == null) {
-          throw Exception('Supabase client not available');
-        }
-
-        // Read PDF bytes
         Uint8List pdfData;
         if (pdfBytes != null) {
           pdfData = pdfBytes;
@@ -390,29 +334,11 @@ class EmailService {
           throw Exception('No PDF provided');
         }
 
-        // Upload to Supabase Storage
-        final fileName = 'emails/${DateTime.now().millisecondsSinceEpoch}_reminder_$invoiceNumber.pdf';
-        
-        await supabase.storage
-            .from('whatsapp_attachments') // Reuse same bucket
-            .uploadBinary(
-              fileName,
-              pdfData,
-              fileOptions: const FileOptions(
-                contentType: 'application/pdf',
-                upsert: false,
-              ),
-            );
-        
-        // Get public URL
-        pdfUrl = supabase.storage
-            .from('whatsapp_attachments')
-            .getPublicUrl(fileName);
-        
-        print('✅ PDF uploaded successfully: $pdfUrl');
+        final base64String = base64Encode(pdfData);
+        pdfUrl = 'data:application/pdf;base64,$base64String';
+        print('✅ PDF encoded successfully');
       }
 
-      // Generate email body
       final emailBody = _generatePaymentReminderEmailHtml(
         recipientName: recipientName,
         invoiceNumber: invoiceNumber,
@@ -420,7 +346,6 @@ class EmailService {
         companyName: companyName,
       );
 
-      // Queue email
       final queueService = EmailQueueService();
       final queueId = await queueService.queueEmail(
         toEmail: recipientEmail,
@@ -432,13 +357,12 @@ class EmailService {
       print('✅ Email queued successfully: $queueId');
       print('📱 Mobile app will send this email automatically');
 
-      // Wait for processing
       try {
         await queueService.waitForProcessing(queueId, timeout: const Duration(seconds: 30));
         return true;
       } catch (e) {
         print('⚠️ Email queued but not yet processed: $e');
-        return true; // Return true as email is queued
+        return true;
       }
     } catch (e) {
       print('Error queueing email: $e');
@@ -448,7 +372,6 @@ class EmailService {
 
   // Test email configuration
   Future<bool> testEmailConfig({String? testRecipientEmail}) async {
-    // Load configuration from SharedPreferences
     await _loadConfig();
     
     if (!(_isConfiguredCache ?? false)) {
@@ -464,7 +387,6 @@ class EmailService {
         allowInsecure: !(_useTls ?? true),
       );
 
-      // Send test email to the configured email or specified recipient
       final recipientEmail = testRecipientEmail ?? _fromEmail ?? _username!;
       
       final message = Message()

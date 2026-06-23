@@ -12,6 +12,7 @@ import '../utils/uganda_formatters.dart';
 import '../services/whatsapp_service.dart';
 import '../services/customer_service.dart';
 import '../services/email_service.dart';
+import '../utils/email_display.dart';
 import 'invoice_form_screen.dart';
 import 'invoices_screen.dart';
 import '../providers/theme_provider.dart';
@@ -110,11 +111,6 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
             ),
           ),
           const SizedBox(width: 16),
-          Image.asset(
-            'assets/logo/logo.png',
-            height: 28,
-          ),
-          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -128,7 +124,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                   ),
                 ),
                 Text(
-                  _customer.email,
+                  displayEmailOrNa(_customer.email),
                   style: GoogleFonts.poppins(
                     fontSize: 16,
                     color: Colors.white.withOpacity(0.8),
@@ -215,7 +211,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _customer.email,
+                      displayEmailOrNa(_customer.email),
                       style: GoogleFonts.poppins(
                         fontSize: 14,
                         color: Colors.white.withOpacity(0.7),
@@ -840,7 +836,7 @@ NSB Motors Ug Team
 
   void _sendEmailToCustomer(BuildContext context, Customer customer) async {
     try {
-      if (customer.email.isEmpty) {
+      if (!isRealCustomerEmail(customer.email)) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(

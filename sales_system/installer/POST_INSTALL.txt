@@ -1,45 +1,43 @@
-NSB Motors Uganda - Installation Complete
-==========================================
+Installation Complete!
+======================
 
-Congratulations! NSB Motors Uganda has been successfully installed on your system.
+Thank you for installing NSB Motors Sales System!
 
-WHAT'S NEXT?
-------------
-1. Launch the application from your Desktop shortcut or Start Menu
-2. Use the default login credentials:
-   - Username: NSB
-   - Password: admin
-3. Start adding your customers and vehicles
-4. Create your first invoice
-
-IMPORTANT SECURITY NOTES
-------------------------
-- Change the default password after first login
-- The application stores all data locally on your computer
-- No data is sent to external servers
-- Regular backups are recommended
-
-QUICK START GUIDE
------------------
-1. Add Customers: Go to Customers → Add New Customer
-2. Add Vehicles: Go to Vehicle Inventory → Add New Vehicle  
-3. Create Invoice: Go to Invoices → Create New Invoice
-4. Track Payments: Go to Payments → Record Payment
-
-DATA BACKUP
+NEXT STEPS:
 -----------
-Your data is stored in: %USERPROFILE%\Documents\NSB_Motors_Data\
-- Backup this folder regularly
-- Copy to external drive for safety
-- Restore by copying backup to the same location
 
-SUPPORT
--------
-Need help? Contact us:
+1. Launch the application from the Start Menu or Desktop shortcut
+
+2. First Time Setup:
+   - Create your administrator account
+   - Username and password will be required
+   - This account will have full system access
+
+3. Configure the system:
+   - Set up your business information
+   - Configure WhatsApp service (optional)
+   - Import vehicle data if needed
+
+IMPORTANT NOTES:
+---------------
+
+- The application stores data locally on this computer
+- Each computer installation has its own user database
+- Make regular backups of your data
+- Keep the application updated for best performance
+
+TROUBLESHOOTING:
+---------------
+
+If you encounter any issues:
+1. Make sure Windows is up to date
+2. Install Visual C++ Redistributable if prompted
+3. Check that you have administrator rights
+4. Contact support if problems persist
+
+SUPPORT:
+--------
+
 Email: nsbbsolutions@gmail.com
-Phone: +256394836253
 
-Business Hours: Monday-Friday, 9AM-5PM EAT
-
-Thank you for choosing NSB Motors Uganda!
-Your vehicle sales management system is ready to use.
+Enjoy using NSB Motors Sales System!

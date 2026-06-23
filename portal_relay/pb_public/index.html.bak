@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NSB Motors Portal</title>
+<script src="https://cdn.jsdelivr.net/npm/pocketbase@0.21.3/dist/pocketbase.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --blue:#1D4ED8;--blue-l:#EFF6FF;--blue-m:#3B82F6;
+  --ink:#0F172A;--sub:#64748B;--border:#E2E8F0;
+  --bg:#F8FAFC;--card:#fff;
+  --green:#16A34A;--green-l:#F0FDF4;
+  --red:#DC2626;--red-l:#FEF2F2;
+  --orange:#D97706;--orange-l:#FFFBEB;
+  --r8:8px;--r12:12px;--r16:16px;--r20:20px;
+}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh}
+a{color:inherit;text-decoration:none}
+button{cursor:pointer;font-family:inherit}
+input,select,textarea{font-family:inherit}
+
+/* ── Auth ── */
+#auth-page{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+.auth-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r20);padding:40px;width:100%;max-width:400px}
+.auth-logo{display:flex;align-items:center;gap:10px;margin-bottom:28px}
+.auth-logo .logo-box{width:40px;height:40px;background:var(--blue);border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:15px}
+.auth-logo h1{font-size:20px;font-weight:700}
+.auth-logo p{font-size:13px;color:var(--sub)}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:var(--ink)}
+.field input,.field select{width:100%;padding:11px 14px;border:1px solid var(--border);border-radius:var(--r12);font-size:14px;background:var(--bg);outline:none;transition:border .15s}
+.field input:focus,.field select:focus{border-color:var(--blue)}
+.btn-primary{width:100%;padding:13px;background:var(--blue);color:#fff;border:none;border-radius:var(--r12);font-size:14px;font-weight:600;transition:opacity .15s}
+.btn-primary:hover{opacity:.9}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed}
+.err-msg{color:var(--red);font-size:13px;margin-top:8px;display:none}
+
+/* ── App shell ── */
+#app{display:none;height:100vh;overflow:hidden;display:none;flex-direction:column}
+.topbar{height:60px;background:var(--card);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:12px;flex-shrink:0}
+.topbar .logo-box{width:32px;height:32px;background:var(--blue);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:12px;flex-shrink:0}
+.topbar h2{font-size:16px;font-weight:700;flex:1}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.user-chip{background:var(--blue-l);color:var(--blue);padding:5px 12px;border-radius:20px;font-size:13px;font-weight:600}
+.btn-logout{padding:6px 14px;border:1px solid var(--border);border-radius:var(--r8);background:transparent;font-size:13px;color:var(--sub)}
+
+/* ── Nav tabs ── */
+.nav{display:flex;gap:2px;padding:12px 16px 0;background:var(--card);border-bottom:1px solid var(--border)}
+.nav-btn{padding:10px 18px;border:none;background:transparent;font-size:14px;font-weight:500;color:var(--sub);border-bottom:2px solid transparent;border-radius:0;transition:all .15s}
+.nav-btn.active{color:var(--blue);border-color:var(--blue);font-weight:600}
+.nav-btn:hover:not(.active){color:var(--ink)}
+
+/* ── Content ── */
+.content{flex:1;overflow-y:auto;padding:20px}
+
+/* ── Cards ── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--r16);padding:20px;margin-bottom:16px}
+.card-title{font-size:15px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r12);padding:16px}
+.stat-label{font-size:12px;color:var(--sub);font-weight:500}
+.stat-val{font-size:22px;font-weight:700;margin-top:4px}
+.stat-sub{font-size:11px;color:var(--sub);margin-top:2px}
+
+/* ── Table ── */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;padding:10px 12px;font-size:12px;font-weight:600;color:var(--sub);border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:12px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg)}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600}
+.badge-green{background:var(--green-l);color:var(--green)}
+.badge-red{background:var(--red-l);color:var(--red)}
+.badge-orange{background:var(--orange-l);color:var(--orange)}
+.badge-blue{background:var(--blue-l);color:var(--blue)}
+.badge-gray{background:#F1F5F9;color:var(--sub)}
+
+/* ── Toolbar ── */
+.toolbar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.toolbar .search{flex:1;min-width:200px;padding:9px 14px;border:1px solid var(--border);border-radius:var(--r12);font-size:14px;background:var(--bg);outline:none}
+.toolbar .search:focus{border-color:var(--blue)}
+.btn{padding:9px 16px;border-radius:var(--r12);font-size:13px;font-weight:600;border:none;display:inline-flex;align-items:center;gap:6px;transition:opacity .15s}
+.btn:hover{opacity:.85}
+.btn-blue{background:var(--blue);color:#fff}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--ink)}
+.btn-sm{padding:6px 12px;font-size:12px;border-radius:8px}
+.btn-red-sm{background:var(--red-l);color:var(--red);border:none;padding:5px 10px;border-radius:8px;font-size:12px;font-weight:600}
+
+/* ── Modal ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:flex-start;justify-content:center;padding:24px;overflow-y:auto}
+.modal-overlay.open{display:flex}
+.modal{background:var(--card);border-radius:var(--r20);width:100%;max-width:680px;margin:auto}
+.modal-header{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-header h3{font-size:17px;font-weight:700}
+.modal-close{background:transparent;border:none;font-size:22px;color:var(--sub);width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:8px}
+.modal-close:hover{background:var(--bg)}
+.modal-body{padding:24px;max-height:70vh;overflow-y:auto}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end}
+
+/* ── Form sections ── */
+.form-section{margin-bottom:24px}
+.form-section-title{font-size:13px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.field-sm label{font-size:12px;font-weight:600;display:block;margin-bottom:5px;color:var(--sub)}
+.field-sm input,.field-sm select,.field-sm textarea{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--r8);font-size:13px;background:var(--bg);outline:none}
+.field-sm input:focus,.field-sm select:focus,.field-sm textarea:focus{border-color:var(--blue)}
+.field-sm textarea{resize:vertical;min-height:70px}
+
+/* ── Phase boxes ── */
+.phase-box{border:1px solid var(--border);border-radius:var(--r12);padding:16px;margin-bottom:12px}
+.phase-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}
+.phase-label.usd{color:#0369A1}
+.phase-label.ugx{color:#7C3AED}
+.phase-total{background:var(--bg);border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-weight:700}
+
+/* ── Line items ── */
+.items-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px}
+.items-table th{text-align:left;padding:6px 8px;font-size:11px;font-weight:700;color:var(--sub);border-bottom:1px solid var(--border)}
+.items-table td{padding:6px 8px;border-bottom:1px solid #F1F5F9}
+.items-table input{width:100%;border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12px;background:var(--bg)}
+.items-table input:focus{outline:none;border-color:var(--blue)}
+.btn-add-item{width:100%;padding:8px;border:1px dashed var(--border);background:transparent;color:var(--sub);border-radius:8px;font-size:13px;margin-top:4px}
+.btn-add-item:hover{background:var(--bg)}
+
+/* ── Invoice view ── */
+.inv-hero{background:linear-gradient(135deg,#1D4ED8 0%,#3B82F6 100%);color:#fff;border-radius:var(--r16);padding:24px;margin-bottom:16px}
+.inv-hero h2{font-size:20px;font-weight:800;margin-bottom:4px}
+.inv-hero p{opacity:.85;font-size:14px}
+.inv-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px}
+.inv-meta-item span{display:block;font-size:11px;opacity:.7}
+.inv-meta-item strong{font-size:14px}
+.inv-phase-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px}
+.inv-phase-row:last-child{border:none;font-weight:700;font-size:16px}
+.grand-total-box{background:var(--blue);color:#fff;border-radius:var(--r12);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;margin-top:12px}
+.grand-total-box .amt{font-size:22px;font-weight:800}
+
+/* ── Toast ── */
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:#0F172A;color:#fff;padding:12px 20px;border-radius:12px;font-size:14px;transition:transform .25s;z-index:999;white-space:nowrap;pointer-events:none}
+#toast.show{transform:translateX(-50%) translateY(0)}
+
+/* ── Loading ── */
+.loading{text-align:center;padding:40px;color:var(--sub);font-size:14px}
+.spinner{width:24px;height:24px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .6s linear infinite;display:inline-block;margin-bottom:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{text-align:center;padding:40px;color:var(--sub)}
+.empty-icon{font-size:40px;margin-bottom:8px}
+
+/* Print */
+@media print{
+  .topbar,.nav,.toolbar,.modal-overlay,#toast,.btn,.no-print{display:none!important}
+  .content{padding:0}
+  .card{border:none;padding:0}
+  body{background:#fff}
+}
+
+@media(max-width:600px){
+  .form-row,.form-row-3{grid-template-columns:1fr}
+  .modal{border-radius:0;max-width:100%;margin:0;border-radius:var(--r16) var(--r16) 0 0}
+  .modal-overlay{align-items:flex-end;padding:0}
+  .stat-grid{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- AUTH PAGE -->
+<div id="auth-page">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="logo-box">NSB</div>
+      <div>
+        <h1>NSB Motors</h1>
+        <p>Portal Login</p>
+      </div>
+    </div>
+    <div class="field">
+      <label>Machine ID / Username</label>
+      <input id="login-user" type="text" placeholder="e.g. M001" autocomplete="username"/>
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input id="login-pass" type="password" placeholder="Your password" autocomplete="current-password"/>
+    </div>
+    <p class="err-msg" id="login-err"></p>
+    <button class="btn-primary" id="login-btn" onclick="doLogin()">Sign In</button>
+  </div>
+</div>
+
+<!-- APP SHELL -->
+<div id="app" style="display:none;flex-direction:column;height:100vh;overflow:hidden">
+  <div class="topbar">
+    <div class="logo-box">NSB</div>
+    <h2>NSB Motors Portal</h2>
+    <div class="topbar-right">
+      <span class="user-chip" id="user-label">—</span>
+      <button class="btn-logout" onclick="doLogout()">Logout</button>
+    </div>
+  </div>
+  <div class="nav">
+    <button class="nav-btn" onclick="showTab('dashboard')" id="tab-dashboard">Dashboard</button>
+    <button class="nav-btn" onclick="showTab('invoices')" id="tab-invoices">Invoices</button>
+    <button class="nav-btn" onclick="showTab('clients')" id="tab-clients">Clients</button>
+    <button class="nav-btn" onclick="showTab('mvdb')" id="tab-mvdb">🔍 URA MV DB</button>
+  </div>
+  <div class="content" id="content">
+    <div class="loading"><div class="spinner"></div><br>Loading…</div>
+  </div>
+</div>
+
+<!-- INVOICE FORM MODAL -->
+<div class="modal-overlay" id="inv-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="inv-modal-title">New Invoice</h3>
+      <button class="modal-close" onclick="closeInvModal()">×</button>
+    </div>
+    <div class="modal-body" id="inv-modal-body"><!-- filled by JS --></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeInvModal()">Cancel</button>
+      <button class="btn btn-blue" id="inv-save-btn" onclick="saveInvoice()">Save Invoice</button>
+    </div>
+  </div>
+</div>
+
+<!-- CLIENT FORM MODAL -->
+<div class="modal-overlay" id="client-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="client-modal-title">New Client</h3>
+      <button class="modal-close" onclick="closeClientModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="field-sm"><label>Full Name *</label><input id="c-name" placeholder="Client name"/></div>
+        <div class="field-sm"><label>Company</label><input id="c-company" placeholder="Company (optional)"/></div>
+      </div>
+      <div class="form-row" style="margin-top:12px">
+        <div class="field-sm"><label>Phone</label><input id="c-phone" placeholder="+256 …"/></div>
+        <div class="field-sm"><label>Email</label><input id="c-email" type="email" placeholder="email@…"/></div>
+      </div>
+      <div class="form-row" style="margin-top:12px">
+        <div class="field-sm"><label>City / Town</label><input id="c-city" placeholder="Kampala"/></div>
+        <div class="field-sm"><label>Location</label><input id="c-location" placeholder="District / area"/></div>
+      </div>
+      <div class="field-sm" style="margin-top:12px">
+        <label>Notes</label>
+        <textarea id="c-notes" placeholder="Any notes…"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeClientModal()">Cancel</button>
+      <button class="btn btn-blue" onclick="saveClient()">Save Client</button>
+    </div>
+  </div>
+</div>
+
+<!-- INVOICE DETAIL MODAL -->
+<div class="modal-overlay" id="inv-detail-modal">
+  <div class="modal" style="max-width:720px">
+    <div class="modal-header">
+      <h3 id="inv-detail-title">Invoice</h3>
+      <button class="modal-close" onclick="document.getElementById('inv-detail-modal').classList.remove('open')">×</button>
+    </div>
+    <div class="modal-body" id="inv-detail-body"><!-- filled --></div>
+    <div class="modal-footer no-print">
+      <button class="btn btn-outline" onclick="window.print()">🖨 Print</button>
+      <button class="btn btn-blue" onclick="document.getElementById('inv-detail-modal').classList.remove('open')">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── PocketBase client ─────────────────────────────────────────────────────────
+const pb = new PocketBase(window.location.origin);
+pb.autoCancellation(false);
+
+let currentUser = null;
+let machineId   = null;
+let allClients  = [];
+let editingInvoiceId = null;
+let editingClientId  = null;
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+async function doLogin() {
+  const btn = document.getElementById('login-btn');
+  const errEl = document.getElementById('login-err');
+  const u = document.getElementById('login-user').value.trim();
+  const p = document.getElementById('login-pass').value.trim();
+
+  if (!u || !p) { showErr('Enter your Machine ID and password'); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  errEl.style.display = 'none';
+
+  try {
+    const authData = await pb.collection('machine_users').authWithPassword(u, p);
+    currentUser = authData.record;
+    machineId   = currentUser.machine_id;
+    startApp();
+  } catch(e) {
+    showErr('Invalid credentials. Check Machine ID and password.');
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+  }
+}
+
+function showErr(msg) {
+  const el = document.getElementById('login-err');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+document.getElementById('login-pass').addEventListener('keydown', e => {
+  if(e.key === 'Enter') doLogin();
+});
+
+function doLogout() {
+  pb.authStore.clear();
+  currentUser = null;
+  machineId   = null;
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('auth-page').style.display = 'flex';
+}
+
+// ── App start ─────────────────────────────────────────────────────────────────
+
+function startApp() {
+  document.getElementById('auth-page').style.display = 'none';
+  const app = document.getElementById('app');
+  app.style.display = 'flex';
+  app.style.flexDirection = 'column';
+  document.getElementById('user-label').textContent =
+    `${currentUser.machine_name} (${currentUser.machine_id})`;
+  showTab('dashboard');
+}
+
+// Check existing session on load
+if (pb.authStore.isValid) {
+  try {
+    pb.collection('machine_users').authRefresh().then(auth => {
+      currentUser = auth.record;
+      machineId   = currentUser.machine_id;
+      startApp();
+    }).catch(() => { pb.authStore.clear(); });
+  } catch(e) {}
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+
+const TABS = ['dashboard','invoices','clients','mvdb'];
+
+function showTab(name) {
+  TABS.forEach(t => document.getElementById('tab-'+t).classList.toggle('active', t===name));
+  const content = document.getElementById('content');
+  content.innerHTML = '<div class="loading"><div class="spinner"></div><br>Loading…</div>';
+  if (name === 'dashboard') renderDashboard();
+  else if (name === 'invoices') renderInvoices();
+  else if (name === 'clients') renderClients();
+  else if (name === 'mvdb') renderMvDb();
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+
+function toast(msg, dur=3000) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), dur);
+}
+
+// ── Format helpers ─────────────────────────────────────────────────────────────
+
+function fmtUGX(n) {
+  if (!n && n!==0) return '—';
+  return 'UGX ' + Math.round(n).toLocaleString();
+}
+function fmtUSD(n) {
+  if (!n && n!==0) return '—';
+  return 'USD ' + Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function fmtDate(s) {
+  if (!s) return '—';
+  const d = new Date(s);
+  return d.toLocaleDateString('en-UG',{day:'2-digit',month:'short',year:'numeric'});
+}
+function statusBadge(s) {
+  const map = {paid:'green',pending:'orange',overdue:'red',draft:'gray',cancelled:'gray',sent:'blue'};
+  return `<span class="badge badge-${map[s]||'gray'}">${s||'draft'}</span>`;
+}
+
+// ── DASHBOARD ─────────────────────────────────────────────────────────────────
+
+async function renderDashboard() {
+  const content = document.getElementById('content');
+  try {
+    const [invRes, clientRes] = await Promise.all([
+      pb.collection('invoices').getList(1, 200, {
+        filter: `machine_id="${machineId}"`,
+        sort: '-created',
+      }),
+      pb.collection('customers').getList(1, 500, {
+        filter: `machine_id="${machineId}"`,
+      }),
+    ]);
+
+    const invoices = invRes.items;
+    const clients  = clientRes.items;
+    allClients = clients;
+
+    const paid    = invoices.filter(i => i.status === 'paid');
+    const pending = invoices.filter(i => i.status === 'pending' || i.status === 'draft');
+    const totalRevenue = paid.reduce((s,i) => s + (i.total_amount||0), 0);
+
+    const today = new Date().toDateString();
+    const todayInv = invoices.filter(i => new Date(i.created).toDateString() === today);
+
+    content.innerHTML = `
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Invoices</div>
+          <div class="stat-val">${invoices.length}</div>
+          <div class="stat-sub">${todayInv.length} today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Paid</div>
+          <div class="stat-val" style="color:var(--green)">${paid.length}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Pending / Draft</div>
+          <div class="stat-val" style="color:var(--orange)">${pending.length}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Clients</div>
+          <div class="stat-val">${clients.length}</div>
+        </div>
+        <div class="stat-card" style="grid-column:span 2">
+          <div class="stat-label">Total Revenue (Paid)</div>
+          <div class="stat-val" style="font-size:18px">${fmtUGX(totalRevenue)}</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Recent Invoices</div>
+        ${invoices.length === 0 ? '<div class="empty"><div class="empty-icon">📄</div><p>No invoices yet</p></div>' : `
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th>Invoice #</th><th>Client</th><th>Date</th><th>Total</th><th>Status</th><th></th>
+            </tr></thead>
+            <tbody>
+              ${invoices.slice(0,10).map(inv => `
+                <tr>
+                  <td><strong>${inv.invoice_number}</strong></td>
+                  <td>${inv.customer_name||'—'}</td>
+                  <td>${fmtDate(inv.invoice_date)}</td>
+                  <td>${fmtUGX(inv.total_amount)}</td>
+                  <td>${statusBadge(inv.status)}</td>
+                  <td><button class="btn btn-outline btn-sm" onclick="viewInvoice('${inv.id}')">View</button></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`}
+      </div>`;
+  } catch(e) {
+    content.innerHTML = `<div class="card"><p style="color:var(--red)">Error loading data: ${e.message}</p></div>`;
+  }
+}
+
+// ── INVOICES ──────────────────────────────────────────────────────────────────
+
+let invoiceSearch = '';
+
+async function renderInvoices() {
+  const content = document.getElementById('content');
+  try {
+    let filter = `machine_id="${machineId}"`;
+    if (invoiceSearch) filter += ` && (invoice_number~"${invoiceSearch}" || customer_name~"${invoiceSearch}")`;
+
+    const res = await pb.collection('invoices').getList(1, 200, {
+      filter, sort: '-created',
+    });
+
+    const clientRes = await pb.collection('customers').getList(1, 500, {filter:`machine_id="${machineId}"`});
+    allClients = clientRes.items;
+
+    const rows = res.items.map(inv => `
+      <tr>
+        <td><strong>${inv.invoice_number}</strong></td>
+        <td>${inv.customer_name||'—'}</td>
+        <td>${fmtDate(inv.invoice_date)}</td>
+        <td>${inv.vehicle_make ? `${inv.vehicle_make} ${inv.vehicle_model} ${inv.vehicle_year||''}` : '—'}</td>
+        <td>${fmtUGX(inv.total_amount)}</td>
+        <td>${statusBadge(inv.status)}</td>
+        <td>
+          <button class="btn btn-outline btn-sm" onclick="viewInvoice('${inv.id}')">View</button>
+          <button class="btn btn-outline btn-sm" onclick="editInvoice('${inv.id}')">Edit</button>
+        </td>
+      </tr>`).join('');
+
+    content.innerHTML = `
+      <div class="toolbar">
+        <input class="search" placeholder="Search invoice # or client…" value="${invoiceSearch}"
+          oninput="invoiceSearch=this.value;renderInvoices()"/>
+        <button class="btn btn-blue" onclick="openNewInvoice()">+ New Invoice</button>
+      </div>
+      <div class="card" style="padding:0">
+        ${res.items.length === 0 ? '<div class="empty" style="padding:40px"><div class="empty-icon">📄</div><p>No invoices found</p></div>' : `
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th>Invoice #</th><th>Client</th><th>Date</th><th>Vehicle</th><th>Total</th><th>Status</th><th></th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`}
+      </div>`;
+  } catch(e) {
+    content.innerHTML = `<div class="card"><p style="color:var(--red)">Error: ${e.message}</p></div>`;
+  }
+}
+
+// ── CLIENTS ───────────────────────────────────────────────────────────────────
+
+let clientSearch = '';
+
+async function renderClients() {
+  const content = document.getElementById('content');
+  try {
+    let filter = `machine_id="${machineId}"`;
+    if (clientSearch) filter += ` && (name~"${clientSearch}" || phone~"${clientSearch}" || company~"${clientSearch}")`;
+
+    const res = await pb.collection('customers').getList(1, 500, {filter, sort: '-created'});
+    allClients = res.items;
+
+    const rows = res.items.map(c => `
+      <tr>
+        <td><strong>${c.name}</strong>${c.company ? `<br><span style="font-size:12px;color:var(--sub)">${c.company}</span>` : ''}</td>
+        <td>${c.phone||'—'}</td>
+        <td>${c.email||'—'}</td>
+        <td>${c.city||''} ${c.location||''}</td>
+        <td>${fmtUGX(c.total_spent)}</td>
+        <td>${c.total_invoices||0}</td>
+        <td>
+          <button class="btn btn-outline btn-sm" onclick="editClient('${c.id}')">Edit</button>
+        </td>
+      </tr>`).join('');
+
+    content.innerHTML = `
+      <div class="toolbar">
+        <input class="search" placeholder="Search clients…" value="${clientSearch}"
+          oninput="clientSearch=this.value;renderClients()"/>
+        <button class="btn btn-blue" onclick="openNewClient()">+ New Client</button>
+      </div>
+      <div class="card" style="padding:0">
+        ${res.items.length === 0 ? '<div class="empty" style="padding:40px"><div class="empty-icon">👤</div><p>No clients yet</p></div>' : `
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th>Name</th><th>Phone</th><th>Email</th><th>Location</th><th>Total Spent</th><th>Invoices</th><th></th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`}
+      </div>`;
+  } catch(e) {
+    content.innerHTML = `<div class="card"><p style="color:var(--red)">Error: ${e.message}</p></div>`;
+  }
+}
+
+// ── CLIENT MODAL ──────────────────────────────────────────────────────────────
+
+function openNewClient() {
+  editingClientId = null;
+  document.getElementById('client-modal-title').textContent = 'New Client';
+  ['name','company','phone','email','city','location','notes'].forEach(f => {
+    document.getElementById('c-'+f).value = '';
+  });
+  document.getElementById('client-modal').classList.add('open');
+}
+
+function editClient(id) {
+  const c = allClients.find(x => x.id === id);
+  if (!c) return;
+  editingClientId = id;
+  document.getElementById('client-modal-title').textContent = 'Edit Client';
+  document.getElementById('c-name').value     = c.name||'';
+  document.getElementById('c-company').value  = c.company||'';
+  document.getElementById('c-phone').value    = c.phone||'';
+  document.getElementById('c-email').value    = c.email||'';
+  document.getElementById('c-city').value     = c.city||'';
+  document.getElementById('c-location').value = c.location||'';
+  document.getElementById('c-notes').value    = c.notes||'';
+  document.getElementById('client-modal').classList.add('open');
+}
+
+function closeClientModal() {
+  document.getElementById('client-modal').classList.remove('open');
+}
+
+async function saveClient() {
+  const name = document.getElementById('c-name').value.trim();
+  if (!name) { toast('Client name is required'); return; }
+
+  const data = {
+    machine_id: machineId,
+    name,
+    company:  document.getElementById('c-company').value.trim(),
+    phone:    document.getElementById('c-phone').value.trim(),
+    email:    document.getElementById('c-email').value.trim(),
+    city:     document.getElementById('c-city').value.trim(),
+    location: document.getElementById('c-location').value.trim(),
+    notes:    document.getElementById('c-notes').value.trim(),
+    is_active: true,
+    total_spent: 0,
+    total_invoices: 0,
+    balance: 0,
+  };
+
+  try {
+    if (editingClientId) {
+      await pb.collection('customers').update(editingClientId, data);
+      toast('Client updated');
+    } else {
+      await pb.collection('customers').create(data);
+      toast('Client created');
+    }
+    closeClientModal();
+    renderClients();
+  } catch(e) {
+    toast('Error: ' + e.message);
+  }
+}
+
+// ── INVOICE MODAL ─────────────────────────────────────────────────────────────
+
+let invItems = [];
+
+function invModalHTML(inv) {
+  const clientOpts = allClients.map(c =>
+    `<option value="${c.id}" ${inv && inv.customer_id === c.id ? 'selected' : ''}>${c.name}${c.company?' ('+c.company+')':''}</option>`
+  ).join('');
+
+  const v = inv || {};
+  return `
+  <div class="form-section">
+    <div class="form-section-title">Invoice Info</div>
+    <div class="form-row">
+      <div class="field-sm">
+        <label>Invoice Number *</label>
+        <input id="f-inv-num" value="${v.invoice_number||genInvNum()}" placeholder="INV-001"/>
+      </div>
+      <div class="field-sm">
+        <label>Type</label>
+        <select id="f-inv-type">
+          <option value="carSale" ${(!v.invoice_type||v.invoice_type==='carSale')?'selected':''}>Car Sale</option>
+          <option value="invoice" ${v.invoice_type==='invoice'?'selected':''}>Invoice</option>
+          <option value="quotation" ${v.invoice_type==='quotation'?'selected':''}>Quotation</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row" style="margin-top:12px">
+      <div class="field-sm">
+        <label>Client *</label>
+        <select id="f-client">
+          <option value="">Select client…</option>
+          ${clientOpts}
+        </select>
+      </div>
+      <div class="field-sm">
+        <label>Status</label>
+        <select id="f-status">
+          ${['draft','pending','paid','overdue','cancelled'].map(s =>
+            `<option value="${s}" ${(v.status||'draft')===s?'selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`
+          ).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-row" style="margin-top:12px">
+      <div class="field-sm">
+        <label>Invoice Date</label>
+        <input id="f-inv-date" type="date" value="${(v.invoice_date||today()).substring(0,10)}"/>
+      </div>
+      <div class="field-sm">
+        <label>Due Date</label>
+        <input id="f-due-date" type="date" value="${(v.due_date||today()).substring(0,10)}"/>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <div class="form-section-title">Vehicle Details</div>
+    <div class="form-row">
+      <div class="field-sm"><label>Stock No</label><input id="f-stock" value="${v.stock_no||''}"/></div>
+      <div class="field-sm"><label>Year</label><input id="f-year" type="number" value="${v.vehicle_year||''}"/></div>
+    </div>
+    <div class="form-row" style="margin-top:12px">
+      <div class="field-sm"><label>Make</label><input id="f-make" value="${v.vehicle_make||''}" placeholder="Toyota"/></div>
+      <div class="field-sm"><label>Model</label><input id="f-model" value="${v.vehicle_model||''}" placeholder="Land Cruiser"/></div>
+    </div>
+    <div class="form-row-3" style="margin-top:12px">
+      <div class="field-sm"><label>Chassis No</label><input id="f-chassis" value="${v.chassis_no||''}"/></div>
+      <div class="field-sm"><label>Engine Size</label><input id="f-engine" value="${v.engine_size||''}" placeholder="2000cc"/></div>
+      <div class="field-sm"><label>Color</label><input id="f-color" value="${v.color||''}" placeholder="White"/></div>
+    </div>
+    <div class="form-row-3" style="margin-top:12px">
+      <div class="field-sm">
+        <label>Fuel Type</label>
+        <select id="f-fuel">
+          ${['Petrol','Diesel','Hybrid','Electric'].map(f =>
+            `<option ${(v.fuel_type||'Petrol')===f?'selected':''}>${f}</option>`
+          ).join('')}
+        </select>
+      </div>
+      <div class="field-sm">
+        <label>Transmission</label>
+        <select id="f-trans">
+          ${['Automatic','Manual'].map(t =>
+            `<option ${(v.transmission||'Automatic')===t?'selected':''}>${t}</option>`
+          ).join('')}
+        </select>
+      </div>
+      <div class="field-sm">
+        <label>Origin</label>
+        <select id="f-origin">
+          ${['JP','DE','GB','US','KR','Other'].map(o =>
+            `<option ${(v.country_of_origin||'JP')===o?'selected':''}>${o}</option>`
+          ).join('')}
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <div class="form-section-title">Phase 1 — USD Payment</div>
+    <div class="phase-box">
+      <div class="phase-label usd">USD Amounts</div>
+      <div class="form-row">
+        <div class="field-sm"><label>Car Price (USD)</label><input id="f-car-usd" type="number" step="0.01" value="${v.car_price_usd||''}" oninput="calcPhase1()"/></div>
+        <div class="field-sm"><label>Clearance Mombasa (USD)</label><input id="f-clear-usd" type="number" step="0.01" value="${v.clearance_fee_usd||''}" oninput="calcPhase1()"/></div>
+      </div>
+      <div class="form-row" style="margin-top:12px">
+        <div class="field-sm"><label>Exchange Rate (UGX/USD)</label><input id="f-rate" type="number" step="0.01" value="${v.exchange_rate||3834.56}" oninput="calcPhase1()"/></div>
+        <div class="field-sm">
+          <label>1st Installment (UGX)</label>
+          <input id="f-first-ugx" type="number" value="${v.first_installment_ugx||''}" readonly style="background:#f1f5f9;color:var(--blue);font-weight:700"/>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <div class="form-section-title">Phase 2 — UGX Payment (Taxes & Fees)</div>
+    <div class="phase-box">
+      <div class="phase-label ugx">UGX Amounts</div>
+      <div class="form-row">
+        <div class="field-sm"><label>URA Taxes (UGX)</label><input id="f-ura" type="number" value="${v.taxes_ura||''}" oninput="calcPhase2()"/></div>
+        <div class="field-sm"><label>Number Plates (UGX)</label><input id="f-plates" type="number" value="${v.number_plates_fee||714300}" oninput="calcPhase2()"/></div>
+      </div>
+      <div class="form-row" style="margin-top:12px">
+        <div class="field-sm"><label>3rd Party Insurance (UGX)</label><input id="f-insurance" type="number" value="${v.third_party_insurance||''}" oninput="calcPhase2()"/></div>
+        <div class="field-sm"><label>Agency Fees (UGX)</label><input id="f-agency" type="number" value="${v.agency_fees||''}" oninput="calcPhase2()"/></div>
+      </div>
+      <div class="phase-total">
+        <span style="color:var(--sub);font-size:13px">2nd Installment Total</span>
+        <span id="f-second-ugx-disp" style="color:#7C3AED">${fmtUGX(v.second_installment_ugx||0)}</span>
+        <input id="f-second-ugx" type="hidden" value="${v.second_installment_ugx||0}"/>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <div class="form-section-title">Line Items (CIF &amp; Others)</div>
+    <table class="items-table">
+      <thead><tr><th style="width:30%">Name</th><th style="width:35%">Description</th><th style="width:15%">Price</th><th style="width:10%">Qty</th><th style="width:10%"></th></tr></thead>
+      <tbody id="items-tbody"></tbody>
+    </table>
+    <button class="btn-add-item" onclick="addItemRow()">+ Add Line Item</button>
+  </div>
+
+  <div class="form-section">
+    <div class="form-section-title">Notes &amp; Terms</div>
+    <div class="field-sm"><label>Notes</label><textarea id="f-notes" style="min-height:50px">${v.notes||''}</textarea></div>
+    <div class="field-sm" style="margin-top:10px"><label>Terms</label><textarea id="f-terms" style="min-height:50px">${v.terms||''}</textarea></div>
+  </div>`;
+}
+
+function today() { return new Date().toISOString(); }
+
+function genInvNum() {
+  const d = new Date();
+  return `INV-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}-${String(Math.floor(Math.random()*900)+100)}`;
+}
+
+function calcPhase1() {
+  const car  = parseFloat(document.getElementById('f-car-usd').value)||0;
+  const clr  = parseFloat(document.getElementById('f-clear-usd').value)||0;
+  const rate = parseFloat(document.getElementById('f-rate').value)||3834.56;
+  const total = (car + clr) * rate;
+  document.getElementById('f-first-ugx').value = total.toFixed(0);
+}
+
+function calcPhase2() {
+  const ura  = parseFloat(document.getElementById('f-ura').value)||0;
+  const plts = parseFloat(document.getElementById('f-plates').value)||714300;
+  const ins  = parseFloat(document.getElementById('f-insurance').value)||0;
+  const agc  = parseFloat(document.getElementById('f-agency').value)||0;
+  const total = ura + plts + ins + agc;
+  document.getElementById('f-second-ugx').value = total;
+  document.getElementById('f-second-ugx-disp').textContent = fmtUGX(total);
+}
+
+function addItemRow(item) {
+  const i = item || {productName:'',description:'',price:'',quantity:1};
+  const tbody = document.getElementById('items-tbody');
+  const idx = tbody.querySelectorAll('tr').length;
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input value="${i.productName||''}" placeholder="CIF Value…" data-field="productName"/></td>
+    <td><input value="${i.description||''}" placeholder="reference" data-field="description"/></td>
+    <td><input type="number" value="${i.price||''}" placeholder="0" data-field="price"/></td>
+    <td><input type="number" value="${i.quantity||1}" min="1" data-field="quantity"/></td>
+    <td><button class="btn-red-sm" onclick="this.closest('tr').remove()">✕</button></td>`;
+  tbody.appendChild(tr);
+}
+
+function getItems() {
+  const rows = document.querySelectorAll('#items-tbody tr');
+  return Array.from(rows).map(tr => {
+    const inputs = tr.querySelectorAll('input');
+    return {
+      productName: inputs[0].value,
+      description: inputs[1].value,
+      price: parseFloat(inputs[2].value)||0,
+      quantity: parseInt(inputs[3].value)||1,
+      taxRate: 0,
+      discount: 0,
+    };
+  }).filter(r => r.productName);
+}
+
+async function openNewInvoice() {
+  editingInvoiceId = null;
+  if (allClients.length === 0) {
+    const res = await pb.collection('customers').getList(1,500,{filter:`machine_id="${machineId}"`});
+    allClients = res.items;
+  }
+  document.getElementById('inv-modal-title').textContent = 'New Invoice';
+  document.getElementById('inv-modal-body').innerHTML = invModalHTML(null);
+  invItems = [];
+  document.getElementById('inv-modal').classList.add('open');
+  calcPhase1(); calcPhase2();
+}
+
+async function editInvoice(id) {
+  try {
+    const inv = await pb.collection('invoices').getOne(id);
+    editingInvoiceId = id;
+    if (allClients.length === 0) {
+      const res = await pb.collection('customers').getList(1,500,{filter:`machine_id="${machineId}"`});
+      allClients = res.items;
+    }
+    document.getElementById('inv-modal-title').textContent = 'Edit Invoice';
+    document.getElementById('inv-modal-body').innerHTML = invModalHTML(inv);
+    // Restore items
+    const items = inv.items || [];
+    items.forEach(it => addItemRow(it));
+    document.getElementById('inv-modal').classList.add('open');
+    calcPhase1(); calcPhase2();
+  } catch(e) {
+    toast('Error loading invoice: ' + e.message);
+  }
+}
+
+function closeInvModal() {
+  document.getElementById('inv-modal').classList.remove('open');
+}
+
+async function saveInvoice() {
+  const invNum  = document.getElementById('f-inv-num').value.trim();
+  const clientId = document.getElementById('f-client').value;
+  if (!invNum) { toast('Invoice number required'); return; }
+  if (!clientId) { toast('Select a client'); return; }
+
+  const client = allClients.find(c => c.id === clientId);
+  const carUSD   = parseFloat(document.getElementById('f-car-usd').value)||0;
+  const clearUSD = parseFloat(document.getElementById('f-clear-usd').value)||0;
+  const rate     = parseFloat(document.getElementById('f-rate').value)||3834.56;
+  const firstUGX = parseFloat(document.getElementById('f-first-ugx').value)||0;
+  const ura      = parseFloat(document.getElementById('f-ura').value)||0;
+  const plates   = parseFloat(document.getElementById('f-plates').value)||714300;
+  const ins      = parseFloat(document.getElementById('f-insurance').value)||0;
+  const agency   = parseFloat(document.getElementById('f-agency').value)||0;
+  const secondUGX= parseFloat(document.getElementById('f-second-ugx').value)||0;
+  const items    = getItems();
+  const total    = firstUGX + secondUGX;
+
+  const data = {
+    machine_id:          machineId,
+    invoice_number:      invNum,
+    invoice_type:        document.getElementById('f-inv-type').value,
+    customer_id:         clientId,
+    customer_name:       client ? client.name : '',
+    invoice_date:        document.getElementById('f-inv-date').value,
+    due_date:            document.getElementById('f-due-date').value,
+    status:              document.getElementById('f-status').value,
+    stock_no:            document.getElementById('f-stock').value,
+    vehicle_make:        document.getElementById('f-make').value,
+    vehicle_model:       document.getElementById('f-model').value,
+    vehicle_year:        parseInt(document.getElementById('f-year').value)||0,
+    chassis_no:          document.getElementById('f-chassis').value,
+    engine_size:         document.getElementById('f-engine').value,
+    color:               document.getElementById('f-color').value,
+    fuel_type:           document.getElementById('f-fuel').value,
+    transmission:        document.getElementById('f-trans').value,
+    country_of_origin:   document.getElementById('f-origin').value,
+    car_price_usd:       carUSD,
+    clearance_fee_usd:   clearUSD,
+    exchange_rate:       rate,
+    first_installment_ugx: firstUGX,
+    taxes_ura:           ura,
+    number_plates_fee:   plates,
+    third_party_insurance: ins,
+    agency_fees:         agency,
+    second_installment_ugx: secondUGX,
+    total_amount:        total,
+    paid_amount:         0,
+    balance_amount:      total,
+    items:               items,
+    notes:               document.getElementById('f-notes').value,
+    terms:               document.getElementById('f-terms').value,
+    is_finalized:        false,
+  };
+
+  const btn = document.getElementById('inv-save-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  try {
+    if (editingInvoiceId) {
+      await pb.collection('invoices').update(editingInvoiceId, data);
+      toast('Invoice updated');
+    } else {
+      await pb.collection('invoices').create(data);
+      toast('Invoice created');
+      // Update client stats
+      if (client) {
+        await pb.collection('customers').update(clientId, {
+          total_invoices: (client.total_invoices||0) + 1,
+        });
+      }
+    }
+    closeInvModal();
+    renderInvoices();
+  } catch(e) {
+    toast('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save Invoice';
+  }
+}
+
+// ── INVOICE VIEW ──────────────────────────────────────────────────────────────
+
+async function viewInvoice(id) {
+  try {
+    const inv = await pb.collection('invoices').getOne(id);
+    const modal = document.getElementById('inv-detail-modal');
+    document.getElementById('inv-detail-title').textContent = inv.invoice_number;
+
+    const items = (inv.items||[]).filter(i => i.productName);
+    const isCIF = i => i.productName.trim().toLowerCase().startsWith('cif') && (i.description||'').toLowerCase().includes('reference');
+
+    document.getElementById('inv-detail-body').innerHTML = `
+      <div class="inv-hero">
+        <div style="display:flex;justify-content:space-between;align-items:start">
+          <div>
+            <h2>${inv.invoice_number}</h2>
+            <p>${inv.invoice_type==='quotation'?'Quotation':'Tax Invoice'} · ${fmtDate(inv.invoice_date)}</p>
+          </div>
+          <span class="badge" style="background:rgba(255,255,255,.2);color:#fff">${(inv.status||'draft').toUpperCase()}</span>
+        </div>
+        <div class="inv-meta">
+          <div class="inv-meta-item"><span>Client</span><strong>${inv.customer_name||'—'}</strong></div>
+          <div class="inv-meta-item"><span>Due Date</span><strong>${fmtDate(inv.due_date)}</strong></div>
+          <div class="inv-meta-item"><span>Vehicle</span><strong>${inv.vehicle_make||''} ${inv.vehicle_model||''} ${inv.vehicle_year||''}</strong></div>
+          <div class="inv-meta-item"><span>Chassis</span><strong>${inv.chassis_no||'—'}</strong></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Vehicle Info</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:14px">
+          ${[
+            ['Stock No', inv.stock_no],
+            ['Engine', inv.engine_size],
+            ['Fuel', inv.fuel_type],
+            ['Transmission', inv.transmission],
+            ['Color', inv.color],
+            ['Origin', inv.country_of_origin],
+          ].filter(r=>r[1]).map(([l,v])=>`<div><span style="color:var(--sub);font-size:12px">${l}</span><br><strong>${v}</strong></div>`).join('')}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="color:#0369A1">Phase 1 — USD Payment (1st Installment)</div>
+        <div class="inv-phase-row"><span>Car Price (Kamunye)</span><span>${fmtUSD(inv.car_price_usd)}</span></div>
+        <div class="inv-phase-row"><span>Clearance Mombasa</span><span>${fmtUSD(inv.clearance_fee_usd)}</span></div>
+        <div class="inv-phase-row" style="color:var(--sub);font-size:13px"><span>Exchange Rate</span><span>1 USD = ${Number(inv.exchange_rate||0).toLocaleString()} UGX</span></div>
+        <div class="inv-phase-row" style="color:#0369A1;font-size:16px;font-weight:700">
+          <span>1st Installment Total</span><span>${fmtUGX(inv.first_installment_ugx)}</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="color:#7C3AED">Phase 2 — UGX Payment (2nd Installment)</div>
+        <div class="inv-phase-row"><span>URA Taxes</span><span>${fmtUGX(inv.taxes_ura)}</span></div>
+        <div class="inv-phase-row"><span>Number Plates</span><span>${fmtUGX(inv.number_plates_fee)}</span></div>
+        <div class="inv-phase-row"><span>3rd Party Insurance</span><span>${fmtUGX(inv.third_party_insurance)}</span></div>
+        <div class="inv-phase-row"><span>Agency Fees</span><span>${fmtUGX(inv.agency_fees)}</span></div>
+        <div class="inv-phase-row" style="color:#7C3AED;font-size:16px;font-weight:700">
+          <span>2nd Installment Total</span><span>${fmtUGX(inv.second_installment_ugx)}</span>
+        </div>
+      </div>
+
+      ${items.length > 0 ? `
+      <div class="card">
+        <div class="card-title">Line Items</div>
+        <table style="width:100%;font-size:13px;border-collapse:collapse">
+          <thead><tr>
+            <th style="text-align:left;padding:6px 0;border-bottom:1px solid var(--border);color:var(--sub);font-size:12px">Item</th>
+            <th style="text-align:left;padding:6px 0;border-bottom:1px solid var(--border);color:var(--sub);font-size:12px">Description</th>
+            <th style="text-align:right;padding:6px 0;border-bottom:1px solid var(--border);color:var(--sub);font-size:12px">Amount</th>
+          </tr></thead>
+          <tbody>
+            ${items.map(i=>`
+              <tr>
+                <td style="padding:8px 0;border-bottom:1px solid #f1f5f9">${i.productName}</td>
+                <td style="padding:8px 0;border-bottom:1px solid #f1f5f9;color:var(--sub)">${i.description||''}</td>
+                <td style="padding:8px 0;border-bottom:1px solid #f1f5f9;text-align:right${isCIF(i)?' color:var(--sub)':''}">${isCIF(i)?'(reference)':fmtUGX(i.price*i.quantity)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>` : ''}
+
+      <div class="grand-total-box">
+        <div>
+          <div style="font-size:13px;opacity:.8">Grand Total</div>
+          <div style="font-size:12px;opacity:.7">Phase 1 + Phase 2</div>
+        </div>
+        <div class="amt">${fmtUGX(inv.total_amount)}</div>
+      </div>
+
+      ${inv.notes ? `<div class="card" style="margin-top:12px"><div class="card-title">Notes</div><p style="font-size:14px;color:var(--sub)">${inv.notes}</p></div>` : ''}
+    `;
+
+    modal.classList.add('open');
+  } catch(e) {
+    toast('Error: ' + e.message);
+  }
+}
+
+// ── URA MV DATABASE SEARCH ───────────────────────────────────────────────────
+
+let mvSearch = '';
+let mvMake   = '';
+let mvResults = [];
+let mvSearchTimer = null;
+
+async function renderMvDb() {
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="card">
+      <div class="card-title">🔍 URA MV CIF Database <span style="font-weight:400;font-size:13px;color:var(--sub)">(${mvResults.length > 0 ? mvResults.length + ' results' : 'search below'})</span></div>
+      <div class="toolbar" style="margin-bottom:12px">
+        <input class="search" id="mv-search-q" placeholder="Search make, model… e.g. Toyota Hiace" value="${mvSearch}"
+          oninput="mvSearch=this.value;debounceMv()"/>
+        <input class="search" id="mv-search-year" type="number" placeholder="Year e.g. 2018" style="max-width:130px"
+          oninput="debounceMv()"/>
+        <input class="search" id="mv-search-cc" type="number" placeholder="CC e.g. 2000" style="max-width:130px"
+          oninput="debounceMv()"/>
+        <button class="btn btn-blue" onclick="searchMvDb()">Search</button>
+      </div>
+      <div id="mv-results"><div class="empty"><div class="empty-icon">🚗</div><p>Enter a make or model to search the URA CIF database</p></div></div>
+    </div>`;
+}
+
+function debounceMv() {
+  clearTimeout(mvSearchTimer);
+  mvSearchTimer = setTimeout(searchMvDb, 400);
+}
+
+async function searchMvDb() {
+  const q    = (document.getElementById('mv-search-q')?.value || '').trim();
+  const year = document.getElementById('mv-search-year')?.value || '';
+  const cc   = document.getElementById('mv-search-cc')?.value || '';
+  const el   = document.getElementById('mv-results');
+  if (!el) return;
+  if (!q && !year && !cc) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">🚗</div><p>Enter a make or model to search</p></div>';
+    return;
+  }
+  el.innerHTML = '<div class="loading"><div class="spinner"></div><br>Searching…</div>';
+  try {
+    const filters = [];
+    if (q) {
+      const safe = q.replace(/"/g, '');
+      filters.push(`(make~"${safe}" || model~"${safe}" || description~"${safe}")`);
+    }
+    if (year) filters.push(`year=${parseInt(year)}`);
+    if (cc)   filters.push(`engine_cc=${parseInt(cc)}`);
+    const filter = filters.join(' && ');
+    const res = await pb.collection('mv_database').getList(1, 100, {
+      filter, sort: 'make,model,year',
+    });
+    mvResults = res.items;
+    if (!res.items.length) {
+      el.innerHTML = '<div class="empty"><div class="empty-icon">😔</div><p>No records found</p></div>';
+      return;
+    }
+    el.innerHTML = `
+      <div style="font-size:13px;color:var(--sub);margin-bottom:10px">${res.totalItems} record(s) found${res.totalItems>100?' · showing first 100':''}</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>Make</th><th>Model</th><th>Year</th><th>CC</th><th>CIF (USD)</th><th>HSC Code</th><th>Month</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${res.items.map(r => `
+              <tr>
+                <td><strong>${r.make}</strong></td>
+                <td>${r.model}</td>
+                <td>${r.year}</td>
+                <td>${r.engine_cc ? r.engine_cc+'cc' : '—'}</td>
+                <td style="color:var(--blue);font-weight:700">${fmtUSD(r.cif_usd)}</td>
+                <td style="font-size:12px;color:var(--sub)">${r.hsc_code||'—'}</td>
+                <td style="font-size:12px;color:var(--sub)">${r.database_month||'—'}</td>
+                <td><button class="btn btn-blue btn-sm" onclick="useMvRecord(${JSON.stringify(r).replace(/'/g,'&apos;').replace(/"/g,'&quot;')})" title="Use this CIF value in new invoice">+ Invoice</button></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="card"><p style="color:var(--red)">Error: ${e.message}</p></div>`;
+  }
+}
+
+function useMvRecord(r) {
+  // Pre-fill a new invoice with this vehicle's data
+  editingInvoiceId = null;
+  pb.collection('customers').getList(1,500,{filter:`machine_id="${machineId}"`}).then(res => {
+    allClients = res.items;
+    const fakeInv = {
+      vehicle_make: r.make,
+      vehicle_model: r.model,
+      vehicle_year: r.year,
+      engine_size: r.engine_cc ? r.engine_cc + 'cc' : '',
+      car_price_usd: r.cif_usd,
+      exchange_rate: 3834.56,
+    };
+    document.getElementById('inv-modal-title').textContent = 'New Invoice — ' + r.make + ' ' + r.model + ' ' + r.year;
+    document.getElementById('inv-modal-body').innerHTML = invModalHTML(fakeInv);
+    document.getElementById('inv-modal').classList.add('open');
+    calcPhase1(); calcPhase2();
+  });
+}
+
+// ── Keyboard close ────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    ['inv-modal','client-modal','inv-detail-modal'].forEach(id => {
+      document.getElementById(id).classList.remove('open');
+    });
+  }
+});
+</script>
+</body>
+</html>

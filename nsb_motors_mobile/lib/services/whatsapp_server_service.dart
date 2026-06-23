@@ -4,7 +4,6 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart' as shelf_router;
 import 'package:url_launcher/url_launcher.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_service.dart';
 
 /// WhatsApp HTTP Server Service
@@ -303,7 +302,7 @@ class WhatsAppServerService {
     }
   }
 
-  /// Store message in Supabase
+  /// Store message in Neon Postgres
   Future<void> _storeMessageInSupabase({
     required String phoneNumber,
     required String message,
@@ -313,8 +312,6 @@ class WhatsAppServerService {
     String? sentByUserName,
   }) async {
     try {
-      final supabase = SupabaseService.client;
-      
       // Format phone number
       String formattedNumber = phoneNumber.replaceAll(RegExp(r'\D'), '');
       if (formattedNumber.startsWith('0')) {
@@ -323,22 +320,18 @@ class WhatsAppServerService {
         formattedNumber = '256$formattedNumber';
       }
 
-      await supabase.from('whatsapp_messages').insert({
-        'message_id': 'msg_${DateTime.now().millisecondsSinceEpoch}',
-        'client_phone': formattedNumber,
+      await SupabaseService.storeWhatsAppMessage({
+        'phone_number': formattedNumber,
         'message_content': message,
         'message_type': messageType,
         'sent_by_machine_id': sentByMachineId,
-        'sent_by_user_id': sentByUserId,
-        'sent_by_user_name': sentByUserName,
-        'sent_at': DateTime.now().toIso8601String(),
-        'status': 'sent',
+        'sent_by_user_id': sentByUserId ?? 'mobile_admin',
+        'sent_by_user_name': sentByUserName ?? 'Mobile Server',
       });
 
-      print('✅ Message stored in Supabase');
+      print('✅ Message stored in Neon Postgres');
     } catch (e) {
-      print('❌ Error storing message in Supabase: $e');
-      // Don't throw - non-critical
+      print('❌ Error storing message in database: $e');
     }
   }
 
@@ -374,67 +367,21 @@ class WhatsAppServerService {
     }
   }
 
-  /// Update mobile server info in Supabase
+  /// Update mobile server info in Neon Postgres
   Future<void> _updateMobileServerInfo() async {
     try {
-      final supabase = SupabaseService.client;
-      final user = SupabaseService.currentUser;
-      
-      if (user == null) return;
-
-      // Store in machine_profiles with special marker
-      await supabase.from('machine_profiles').upsert({
-        'machine_id': 'mobile_server_${user.id}',
-        'machine_name': 'Mobile Server (Admin)',
-        'user_id': user.id,
-        'user_email': user.email,
-        'is_active': _isRunning,
-        'last_seen': DateTime.now().toIso8601String(),
-        // Store server info in custom fields (we'll add these to table)
-      });
-
-      // Also store in a dedicated table if it exists
-      try {
-        await supabase.from('mobile_server_info').upsert({
-          'id': user.id,
-          'mobile_ip': _serverIp,
-          'mobile_port': _port,
-          'last_seen': DateTime.now().toIso8601String(),
-          'is_active': _isRunning,
-          'updated_at': DateTime.now().toIso8601String(),
-        });
-      } catch (e) {
-        // Table might not exist yet, that's OK
-        print('⚠️ mobile_server_info table not found, using machine_profiles: $e');
-      }
+      await SupabaseService.updateMobileServerInfo(_serverIp ?? '127.0.0.1', _port, _isRunning);
+      print('✅ Mobile server info updated in Neon Postgres');
     } catch (e) {
       print('❌ Error updating mobile server info: $e');
     }
   }
 
-  /// Clear mobile server info from Supabase
+  /// Clear mobile server info from Neon Postgres
   Future<void> _clearMobileServerInfo() async {
     try {
-      final supabase = SupabaseService.client;
-      final user = SupabaseService.currentUser;
-      
-      if (user == null) return;
-
-      await supabase.from('machine_profiles').update({
-        'is_active': false,
-        'last_seen': DateTime.now().toIso8601String(),
-      }).eq('machine_id', 'mobile_server_${user.id}');
-
-      try {
-        await supabase.from('mobile_server_info').update({
-          'is_active': false,
-          'last_seen': DateTime.now().toIso8601String(),
-          'updated_at': DateTime.now().toIso8601String(),
-        }).eq('id', user.id);
-      } catch (e) {
-        // Ignore - table might not exist
-        print('⚠️ Error updating mobile_server_info: $e');
-      }
+      await SupabaseService.clearMobileServerInfo();
+      print('✅ Mobile server info cleared from Neon Postgres');
     } catch (e) {
       print('❌ Error clearing mobile server info: $e');
     }

@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import '../services/pairing_service.dart';
-import 'pairing_lock_screen.dart';
 import 'glass_login_screen.dart';
 import '../services/auth_service.dart';
 import 'signup_screen.dart';
@@ -13,9 +11,7 @@ class RootGate extends StatefulWidget {
 }
 
 class _RootGateState extends State<RootGate> {
-  final PairingService _pairingService = PairingService();
   bool _loading = true;
-  bool _paired = false;
   bool _hasUser = false;
 
   @override
@@ -25,16 +21,24 @@ class _RootGateState extends State<RootGate> {
   }
 
   Future<void> _check() async {
-    final paired = await _pairingService.isPaired();
-    bool hasUser = false;
-    if (paired) {
-      hasUser = await AuthService().hasAnyUser();
+    try {
+      // QR CODE SCANNING DEACTIVATED
+      // Skip pairing check entirely - go straight to user authentication
+      // For new devices, user will create account with username/password/confirm password
+      final hasUser = await AuthService().hasAnyUser();
+      
+      setState(() {
+        _hasUser = hasUser;
+        _loading = false;
+      });
+    } catch (e) {
+      // If there's any error, default to no user (will show signup screen)
+      print('Error in user check: $e');
+      setState(() {
+        _hasUser = false;
+        _loading = false;
+      });
     }
-    setState(() {
-      _paired = paired;
-      _hasUser = hasUser;
-      _loading = false;
-    });
   }
 
   @override
@@ -42,14 +46,11 @@ class _RootGateState extends State<RootGate> {
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    if (!_paired) {
-      return const PairingLockScreen();
-    }
+    // QR CODE SCANNING DEACTIVATED - Skip PairingLockScreen
+    // Direct to signup if no user exists, otherwise login
     if (!_hasUser) {
-      return const SignupScreen();
+      return const SignupScreen(); // New device: Create account with username/password/confirm password
     }
-    return const GlassLoginScreen();
+    return const GlassLoginScreen(); // Existing device: Login with username/password
   }
 }
-
-

@@ -1,11 +1,8 @@
 import 'dart:io';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../config/supabase_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'postgres_service.dart';
 
-// NetworkInterface is in dart:io which is already imported
-
-/// Service for handling remote commands from mobile app
+/// Service for handling remote commands from mobile app using Neon Postgres
 class RemoteCommandService {
   static final RemoteCommandService _instance = RemoteCommandService._internal();
   factory RemoteCommandService() => _instance;
@@ -13,23 +10,17 @@ class RemoteCommandService {
 
   static const String _clientIdKey = 'remote_client_id';
   static const String _pairingDeviceIdKey = 'pairing_device_id';
-  SupabaseClient? _client;
   bool _isInitialized = false;
   bool _isPolling = false;
   static const String _pairingTable = 'desktop_clients';
 
-  /// Initialize Supabase connection
+  /// Initialize Postgres connection
   Future<void> initialize() async {
     if (_isInitialized) return;
 
     try {
-      await Supabase.initialize(
-        url: SupabaseConfig.url,
-        anonKey: SupabaseConfig.anonKey,
-      );
-      _client = Supabase.instance.client;
       _isInitialized = true;
-      print('✅ RemoteCommandService initialized');
+      print('✅ RemoteCommandService initialized (Postgres)');
     } catch (e) {
       print('❌ Error initializing RemoteCommandService: $e');
       rethrow;
@@ -39,17 +30,14 @@ class RemoteCommandService {
   /// Get or generate client ID (unique per machine)
   Future<String> getClientId() async {
     final prefs = await SharedPreferences.getInstance();
-    // Prefer the pairing device id so desktop uses the QR device_id consistently
     final pairedId = prefs.getString(_pairingDeviceIdKey);
     if (pairedId != null && pairedId.isNotEmpty) {
-      // Also mirror into remote_client_id for compatibility
       await prefs.setString(_clientIdKey, pairedId);
       return pairedId;
     }
     String? clientId = prefs.getString(_clientIdKey);
 
     if (clientId == null) {
-      // Generate unique client ID based on machine
       clientId = _generateClientId();
       await prefs.setString(_clientIdKey, clientId);
     }
@@ -64,7 +52,7 @@ class RemoteCommandService {
     return 'desktop_${hostname}_$timestamp';
   }
 
-  /// Register this desktop client with Supabase
+  /// Register this desktop client with Neon Postgres
   Future<bool> registerClient({String? overrideClientName, String? overrideClientId}) async {
     if (!_isInitialized) {
       await initialize();
@@ -72,11 +60,10 @@ class RemoteCommandService {
 
     try {
       final clientId = overrideClientId ?? await getClientId();
-      final clientName = overrideClientName; // only set name if explicitly provided
+      final clientName = overrideClientName;
       final platform = Platform.operatingSystem;
-      final version = '1.0.0'; // You can get this from pubspec.yaml
+      final version = '1.0.0';
 
-      // Get IP address (simplified - may not work on all systems)
       String ipAddress = 'unknown';
       try {
         for (var interface in await NetworkInterface.list()) {
@@ -92,14 +79,41 @@ class RemoteCommandService {
         print('Could not get IP address: $e');
       }
 
-      // Use server time via RPC to avoid client clock skew
-      await _client!.rpc('register_client_touch', params: {
-        'p_client_id': clientId,
-        'p_client_name': clientName,
-        'p_version': version,
-        'p_platform': platform,
-        'p_ip': ipAddress,
-      });
+      // Call register_client_touch function or custom direct upsert
+      try {
+        await PostgresService.execute(
+          'SELECT register_client_touch(@p_client_id, @p_client_name, @p_version, @p_platform, @p_ip)',
+          parameters: {
+            'p_client_id': clientId,
+            'p_client_name': clientName,
+            'p_version': version,
+            'p_platform': platform,
+            'p_ip': ipAddress,
+          },
+        );
+      } catch (e) {
+        // Fallback to direct INSERT/UPDATE in case the stored procedure is missing or has a different signature
+        print('⚠️ RPC register_client_touch failed, running fallback upsert: $e');
+        await PostgresService.execute(
+          '''
+          INSERT INTO $_pairingTable (client_id, client_name, version, platform, ip_address, last_seen, status)
+          VALUES (@clientId, @clientName, @version, @platform, @ipAddress, NOW(), 'pending_pairing')
+          ON CONFLICT (client_id) DO UPDATE SET
+            client_name = COALESCE(EXCLUDED.client_name, desktop_clients.client_name),
+            version = EXCLUDED.version,
+            platform = EXCLUDED.platform,
+            ip_address = EXCLUDED.ip_address,
+            last_seen = NOW();
+          ''',
+          parameters: {
+            'clientId': clientId,
+            'clientName': clientName ?? 'Desktop Client',
+            'version': version,
+            'platform': platform,
+            'ipAddress': ipAddress,
+          },
+        );
+      }
 
       print('✅ Desktop client registered: $clientId');
       return true;
@@ -118,13 +132,20 @@ class RemoteCommandService {
       await initialize();
     }
     try {
-      await _client!.from(_pairingTable).upsert({
-        'client_id': deviceId,
-        'pairing_token': pairingToken,
-        'status': 'pending_pairing',
-        'last_seen': DateTime.now().toIso8601String(),
-        'created_at': DateTime.now().toIso8601String(),
-      });
+      await PostgresService.execute(
+        '''
+        INSERT INTO $_pairingTable (client_id, pairing_token, status, last_seen, created_at)
+        VALUES (@clientId, @pairingToken, 'pending_pairing', NOW(), NOW())
+        ON CONFLICT (client_id) DO UPDATE SET
+          pairing_token = EXCLUDED.pairing_token,
+          status = EXCLUDED.status,
+          last_seen = NOW();
+        ''',
+        parameters: {
+          'clientId': deviceId,
+          'pairingToken': pairingToken,
+        },
+      );
     } catch (e) {
       print('❌ Error creating pairing request: $e');
     }
@@ -138,16 +159,13 @@ class RemoteCommandService {
       await initialize();
     }
     try {
-      final resp = await _client!
-          .from(_pairingTable)
-          .select('status, client_name')
-          .eq('client_id', deviceId)
-          .maybeSingle();
-      if (resp == null) return null; // no row yet; keep waiting
-      return Map<String, dynamic>.from(resp);
+      final resp = await PostgresService.query(
+        'SELECT status, client_name FROM $_pairingTable WHERE client_id = @deviceId LIMIT 1',
+        parameters: {'deviceId': deviceId},
+      );
+      if (resp.isEmpty) return null;
+      return resp.first;
     } catch (e) {
-      // Avoid noisy logs while waiting; only log unexpected errors
-      // print('❌ Error polling pairing approval: $e');
       return null;
     }
   }
@@ -162,46 +180,45 @@ class RemoteCommandService {
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         final clientId = await getClientId();
-        // Server-side last_seen update via RPC
-        await _client!.rpc('update_last_seen', params: {'p_client_id': clientId});
-        print('✅ Updated last_seen (server time) for client: $clientId');
-        return; // Success, exit retry loop
+        try {
+          await PostgresService.execute(
+            'SELECT update_last_seen(@p_client_id)',
+            parameters: {'p_client_id': clientId},
+          );
+        } catch (e) {
+          // Fallback to direct UPDATE in case stored procedure fails
+          await PostgresService.execute(
+            'UPDATE $_pairingTable SET last_seen = NOW() WHERE client_id = @clientId',
+            parameters: {'clientId': clientId},
+          );
+        }
+        print('✅ Updated last_seen for client: $clientId');
+        return;
       } catch (e) {
         final isLastAttempt = attempt >= maxRetries;
-        
-        // Only log errors on the last attempt to avoid spam
         if (isLastAttempt) {
           print('❌ Error updating last_seen after $maxRetries attempts: $e');
-          // Try to re-initialize if connection lost (only on final failure)
-          try {
-            await initialize();
-            await registerClient();
-          } catch (reinitError) {
-            // Silently fail - will retry on next heartbeat
-          }
           return;
         }
-        
-        // Exponential backoff: wait 1s, 2s before retrying (on attempts 1 and 2)
         final delayMs = (1 << (attempt - 1)) * 1000;
         await Future.delayed(Duration(milliseconds: delayMs));
       }
     }
   }
 
-  /// Fetch this client's current status from Supabase
+  /// Fetch this client's current status from Neon Postgres
   Future<String?> getCurrentClientStatus() async {
     if (!_isInitialized) {
       await initialize();
     }
     try {
       final clientId = await getClientId();
-      final resp = await _client!
-          .from('desktop_clients')
-          .select('status')
-          .eq('client_id', clientId)
-          .single();
-      return (resp['status'] as String?)?.toLowerCase();
+      final resp = await PostgresService.query(
+        'SELECT status FROM $_pairingTable WHERE client_id = @clientId LIMIT 1',
+        parameters: {'clientId': clientId},
+      );
+      if (resp.isEmpty) return null;
+      return (resp.first['status'] as String?)?.toLowerCase();
     } catch (e) {
       print('❌ Error fetching client status: $e');
       return null;
@@ -218,45 +235,17 @@ class RemoteCommandService {
       final clientId = await getClientId();
       print('🔍 Polling for commands (client_id: $clientId)...');
       
-      // First, check if there are ANY commands for this client (for debugging)
-      try {
-        final allCommands = await _client!
-            .from('remote_commands')
-            .select('id, command, status, created_at')
-            .eq('client_id', clientId)
-            .order('created_at', ascending: false)
-            .limit(5);
-        print('📊 Latest commands for this client: ${allCommands.length} total');
-        for (final cmd in allCommands) {
-          print('   - ${cmd['command']} (status: ${cmd['status']}, created: ${cmd['created_at']})');
-        }
-      } catch (e) {
-        print('⚠️ Could not check all commands: $e');
-      }
-      
-      // Now get pending commands
-      final response = await _client!
-          .from('remote_commands')
-          .select('*')
-          .eq('client_id', clientId)
-          .eq('status', 'pending')
-          .order('created_at', ascending: true)
-          .limit(10);
+      final response = await PostgresService.query(
+        'SELECT * FROM remote_commands WHERE client_id = @clientId AND status = \'pending\' ORDER BY created_at ASC LIMIT 10',
+        parameters: {'clientId': clientId},
+      );
 
-      final commands = List<Map<String, dynamic>>.from(response);
-      if (commands.isNotEmpty) {
-        print('📬 Found ${commands.length} pending command(s)');
-        for (final cmd in commands) {
-          print('   - ${cmd['command']} (ID: ${cmd['id']})');
-          print('     Parameters: ${cmd['parameters']}');
-        }
-      } else {
-        print('   No pending commands found');
+      if (response.isNotEmpty) {
+        print('📬 Found ${response.length} pending command(s)');
       }
-      return commands;
+      return response;
     } catch (e) {
       print('❌ Error polling commands: $e');
-      print('   Stack trace: ${StackTrace.current}');
       return [];
     }
   }
@@ -271,24 +260,29 @@ class RemoteCommandService {
     if (!_isInitialized) return false;
 
     try {
-      final updateData = <String, dynamic>{
+      final parameters = <String, dynamic>{
+        'id': commandId,
         'status': status,
       };
 
+      String query = 'UPDATE remote_commands SET status = @status';
+
       if (status == 'processing') {
-        updateData['started_at'] = DateTime.now().toIso8601String();
+        query += ', started_at = NOW()';
       } else if (status == 'completed' || status == 'failed') {
-        updateData['completed_at'] = DateTime.now().toIso8601String();
+        query += ', completed_at = NOW()';
         if (errorMessage != null) {
-          updateData['error_message'] = errorMessage;
+          query += ', error_message = @errorMessage';
+          parameters['errorMessage'] = errorMessage;
         }
         if (resultSummary != null) {
-          updateData['result_summary'] = resultSummary;
+          query += ', result_summary = @resultSummary';
+          parameters['resultSummary'] = resultSummary;
         }
       }
+      query += ' WHERE id = @id::uuid';
 
-      await _client!.from('remote_commands').update(updateData).eq('id', commandId);
-
+      await PostgresService.execute(query, parameters: parameters);
       return true;
     } catch (e) {
       print('Error updating command status: $e');
@@ -308,11 +302,9 @@ class RemoteCommandService {
     _isPolling = true;
     print('🔄 Starting polling loop (interval: ${interval.inSeconds}s)');
 
-    // Start polling in background - don't await so it runs independently
     _pollLoop(onCommandReceived, interval).catchError((error) {
       print('❌ Fatal error in polling loop: $error');
       _isPolling = false;
-      // Try to restart after a delay
       Future.delayed(const Duration(seconds: 10), () {
         if (!_isPolling) {
           print('🔄 Attempting to restart polling...');
@@ -335,42 +327,27 @@ class RemoteCommandService {
     int pollCount = 0;
     while (_isPolling) {
       try {
-        // Update last seen (this is the key update for real-time status)
         await updateLastSeen();
-
-        // Poll for commands
         final commands = await pollCommands();
 
-        if (commands.isNotEmpty) {
-          print('📨 Processing ${commands.length} command(s)...');
-        }
-        
         for (final command in commands) {
           print('🔄 Processing command: ${command['command']} (ID: ${command['id']})');
           await onCommandReceived(command);
         }
 
-        // Log every 12 polls (once per minute if polling every 5 seconds)
         pollCount++;
         if (pollCount % 12 == 0) {
           print('🔄 Polling active - poll #$pollCount');
         }
       } catch (e) {
         print('❌ Error in polling loop: $e');
-        // Continue polling even after errors
-        print('🔄 Continuing polling despite error...');
       }
 
-      // Wait before next poll - ensure we always wait even if there was an error
       try {
         await Future.delayed(interval);
       } catch (e) {
-        print('❌ Error in delay: $e');
-        // If delay fails, wait a bit anyway
         await Future.delayed(const Duration(seconds: 5));
       }
     }
-    print('⚠️ Polling loop stopped. _isPolling = $_isPolling');
   }
 }
-

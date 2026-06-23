@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'config/supabase_config.dart';
 import 'services/supabase_service.dart';
 import 'services/whatsapp_queue_processor.dart';
 import 'services/email_queue_processor.dart';
@@ -10,73 +9,65 @@ import 'services/background_service.dart';
 import 'services/notification_service.dart';
 import 'services/notification_preferences_service.dart';
 import 'services/invoice_sync_service.dart';
+import 'services/machine_management_service.dart';
 import 'providers/app_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+      systemNavigationBarColor: Color(0xFFF8FAFC),
+      systemNavigationBarIconBrightness: Brightness.dark,
+    ),
+  );
+
   try {
-    // Initialize Supabase
     await SupabaseService.initialize();
 
-    // Initialize notification preferences
     try {
       await NotificationPreferencesService().initialize();
     } catch (e) {
-      print('⚠️ Error initializing notification preferences: $e');
-      // Continue - preferences will use defaults
+      debugPrint('Warning: Error initializing notification preferences: $e');
     }
 
-    // Notifications (Android 13+ requires runtime permission)
     try {
       await NotificationService().initialize();
       await NotificationService().requestPermissions();
-      // Emit a test notification so we can confirm OS delivery
-      await NotificationService().show('NSB Motors', 'Notifications enabled');
     } catch (e) {
-      print('⚠️ Error initializing notifications: $e');
-      // Continue - notifications may not work but app should still run
+      debugPrint('Warning: Error initializing notifications: $e');
     }
-    
-    // Debug: Check initial auth state
-    print('🔐 Initial auth check:');
-    print('   Has session: ${SupabaseService.currentSession != null}');
-    print('   Has user: ${SupabaseService.currentUser != null}');
-    print('   Is authenticated: ${SupabaseService.isAuthenticated}');
-    
-    // Note: Using Realtime subscriptions for instant notifications
-    // Works when app is open or in background (not force-closed)
 
-    // Start queue processors if authenticated
     if (SupabaseService.isAuthenticated) {
       try {
         WhatsAppQueueProcessor().start();
         EmailQueueProcessor().start();
-        BackgroundService().start(); // Keep app alive for instant WhatsApp opening
-        
-        // Sync invoices in background (non-blocking)
+        BackgroundService().start();
+
         InvoiceSyncService().syncAllInvoices().then((count) {
-          if (count > 0) {
-            print('✅ Synced $count invoice(s) on startup');
-          }
+          if (count > 0) debugPrint('Synced $count invoice(s) on startup');
         }).catchError((e) {
-          print('⚠️ Error syncing invoices on startup: $e');
+          debugPrint('Warning: Error syncing invoices on startup: $e');
         });
-        
-        print('✅ WhatsApp and Email queue processors started');
       } catch (e) {
-        print('⚠️ Error starting queue processors: $e');
-        // Continue - app should still work
+        debugPrint('Warning: Error starting queue processors: $e');
       }
     }
+
+    // Connect to relay server (loads saved URL from SharedPreferences)
+    try {
+      MachineManagementService().loadAndConnect();
+    } catch (e) {
+      debugPrint('Warning: Error connecting to relay: $e');
+    }
   } catch (e, stackTrace) {
-    print('❌ Critical error during initialization: $e');
-    print('Stack trace: $stackTrace');
-    // Still run the app - let user see error screen if needed
+    debugPrint('Critical error during initialization: $e\n$stackTrace');
   }
-  
+
   runApp(const NSBMotorsMobileApp());
 }
 
@@ -88,39 +79,163 @@ class NSBMotorsMobileApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AppProvider()),
+        ChangeNotifierProvider(create: (_) => MachineManagementService()),
       ],
       child: MaterialApp(
-        title: 'NSB Motors Mobile',
+        title: 'NSB Motors',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          primarySwatch: Colors.indigo,
-          primaryColor: const Color(0xFF3B82F6),
-          scaffoldBackgroundColor: const Color(0xFF1A1A1A),
-          appBarTheme: AppBarTheme(
-            backgroundColor: const Color(0xFF2A2A2A),
-            elevation: 0,
-            titleTextStyle: GoogleFonts.poppins(
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
-            ),
-          ),
-          textTheme: GoogleFonts.poppinsTextTheme(
-            Theme.of(context).textTheme,
-          ).apply(
-            bodyColor: Colors.white,
-            displayColor: Colors.white,
-          ),
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF3B82F6),
-            brightness: Brightness.dark,
-          ),
-        ),
+        theme: _buildTheme(),
         routes: {
           '/home': (context) => const HomeScreen(),
           '/login': (context) => const LoginScreen(),
         },
         home: const AuthWrapper(),
+      ),
+    );
+  }
+
+  ThemeData _buildTheme() {
+    const canvas = Color(0xFFF8FAFC);
+    const surface = Color(0xFFFFFFFF);
+    const ink = Color(0xFF0F172A);
+    const secondary = Color(0xFF64748B);
+    const border = Color(0xFFE2E8F0);
+    const accent = Color(0xFF1D4ED8);
+    const accentLight = Color(0xFFEFF6FF);
+
+    final base = GoogleFonts.plusJakartaSansTextTheme().apply(
+      bodyColor: ink,
+      displayColor: ink,
+    );
+
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: accent,
+        brightness: Brightness.light,
+        primary: accent,
+        secondary: const Color(0xFF3B82F6),
+        surface: surface,
+        background: canvas,
+        onPrimary: Colors.white,
+        onSurface: ink,
+      ),
+      scaffoldBackgroundColor: canvas,
+      textTheme: base,
+      appBarTheme: AppBarTheme(
+        backgroundColor: surface,
+        foregroundColor: ink,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        shadowColor: Colors.transparent,
+        centerTitle: false,
+        titleTextStyle: GoogleFonts.plusJakartaSans(
+          fontSize: 19,
+          fontWeight: FontWeight.w700,
+          color: ink,
+          letterSpacing: -0.3,
+        ),
+        iconTheme: const IconThemeData(color: ink),
+        actionsIconTheme: const IconThemeData(color: ink),
+        systemOverlayStyle: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: surface,
+        elevation: 0,
+        shadowColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: border, width: 1),
+        ),
+        margin: EdgeInsets.zero,
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xFFF8FAFC),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: accent, width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFDC2626)),
+        ),
+        labelStyle: GoogleFonts.plusJakartaSans(color: secondary, fontSize: 14),
+        hintStyle: GoogleFonts.plusJakartaSans(color: const Color(0xFF94A3B8), fontSize: 14),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: accent,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          textStyle: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, fontSize: 14),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: accent,
+          side: const BorderSide(color: accent),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          textStyle: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, fontSize: 14),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: accent,
+          textStyle: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+        ),
+      ),
+      dividerTheme: const DividerThemeData(
+        color: Color(0xFFF1F5F9),
+        thickness: 1,
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: MaterialStateProperty.resolveWith((states) =>
+            states.contains(MaterialState.selected) ? accent : Colors.white),
+        trackColor: MaterialStateProperty.resolveWith((states) =>
+            states.contains(MaterialState.selected)
+                ? accent.withOpacity(0.4)
+                : border),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: accentLight,
+        labelStyle: GoogleFonts.plusJakartaSans(color: accent, fontSize: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        titleTextStyle: GoogleFonts.plusJakartaSans(
+          fontSize: 17,
+          fontWeight: FontWeight.w700,
+          color: ink,
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: ink,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        contentTextStyle: GoogleFonts.plusJakartaSans(fontSize: 14, color: Colors.white),
+      ),
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        backgroundColor: accent,
+        foregroundColor: Colors.white,
+        elevation: 0,
       ),
     );
   }
@@ -136,53 +251,13 @@ class AuthWrapper extends StatefulWidget {
 class _AuthWrapperState extends State<AuthWrapper> {
   @override
   Widget build(BuildContext context) {
-    // Check current session first (immediate check)
-    final currentAuth = SupabaseService.isAuthenticated;
-    
-    return StreamBuilder<AuthState>(
-      stream: SupabaseService.authStateChanges,
-      initialData: null,
-      builder: (context, snapshot) {
-        // Use current auth state if stream hasn't emitted yet
-        final hasAuthData = snapshot.hasData;
-        final authState = snapshot.data;
-        
-        // Determine authentication status
-        bool isAuthenticated = currentAuth;
-        if (hasAuthData && authState != null) {
-          isAuthenticated = authState.session != null;
-        }
-        
-        // Always show login if not authenticated
-        if (!isAuthenticated) {
-          return const LoginScreen();
-        }
-        
-        // Show home if authenticated
-        // Start queue processor if not already running
-        if (isAuthenticated && !WhatsAppQueueProcessor().isRunning) {
-          WhatsAppQueueProcessor().start();
-          EmailQueueProcessor().start();
-          BackgroundService().start(); // Keep app alive for instant WhatsApp opening
-          
-          // Sync invoices in background (non-blocking)
-          InvoiceSyncService().syncAllInvoices().then((count) {
-            if (count > 0) {
-              print('✅ Synced $count invoice(s) on login');
-            }
-          }).catchError((e) {
-            print('⚠️ Error syncing invoices on login: $e');
-          });
-        } else if (!isAuthenticated && WhatsAppQueueProcessor().isRunning) {
-          WhatsAppQueueProcessor().stop();
-          EmailQueueProcessor().stop();
-          BackgroundService().stop();
-        }
-        
-        return const HomeScreen();
-      },
-    );
+    // AUTH DISABLED — bypass login and go straight to HomeScreen
+    if (!WhatsAppQueueProcessor().isRunning) {
+      WhatsAppQueueProcessor().start();
+      EmailQueueProcessor().start();
+      BackgroundService().start();
+      MachineManagementService().loadAndConnect();
+    }
+    return const HomeScreen();
   }
 }
-
-// Background callback is now in background_service.dart

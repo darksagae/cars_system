@@ -31,6 +31,10 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
+/// Access code required for Payments, Demand Letters, Reminders, and Reports tabs.
+const String _kAccessCode = '5216';
+const List<int> _kLockedNavIndices = [3, 4, 5, 6]; // Payments, Demand Letters, Reminders, Reports
+
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -103,6 +107,70 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
   
+  Future<bool> _showAccessCodeDialog(BuildContext context) async {
+    final controller = TextEditingController();
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: Text(
+            'Access Code',
+            style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          content: TextField(
+            controller: controller,
+            obscureText: true,
+            keyboardType: TextInputType.number,
+            style: GoogleFonts.poppins(color: Colors.white, fontSize: 18),
+            decoration: InputDecoration(
+              hintText: 'Enter access code',
+              hintStyle: GoogleFonts.poppins(color: Colors.white54),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: Colors.white24),
+              ),
+            ),
+            onSubmitted: (value) {
+              if (value == _kAccessCode) {
+                Navigator.of(ctx).pop(true);
+              } else {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(
+                    content: Text('Incorrect access code', style: GoogleFonts.poppins()),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.white70)),
+            ),
+            TextButton(
+              onPressed: () {
+                if (controller.text == _kAccessCode) {
+                  Navigator.of(ctx).pop(true);
+                } else {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(
+                      content: Text('Incorrect access code', style: GoogleFonts.poppins()),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              child: Text('OK', style: GoogleFonts.poppins(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    ).then((v) => v ?? false);
+  }
+
   Future<void> _pickProfileImage() async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
@@ -268,29 +336,42 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<ThemeProvider>(
-      builder: (context, themeProvider, child) {
-        return Scaffold(
-          body: Container(
-            decoration: BoxDecoration(
-              gradient: themeProvider.backgroundGradient,
-                ),
-            child: SafeArea(
-              child: Row(
-                children: [
-                  _buildSidebar(),
-                  Expanded(
-                    child: FadeTransition(
-                      opacity: _fadeAnimation,
-                      child: _buildMainContent(),
-                    ),
+    return WillPopScope(
+      onWillPop: () async {
+        // If not on Dashboard, navigate back to Dashboard instead of exiting
+        if (_selectedIndex != 0) {
+          setState(() {
+            _selectedIndex = 0;
+          });
+          return false;
+        }
+        // On Dashboard, allow the system back to close the app
+        return true;
+      },
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, child) {
+          return Scaffold(
+            body: Container(
+              decoration: BoxDecoration(
+                gradient: themeProvider.backgroundGradient,
                   ),
-                ],
+              child: SafeArea(
+                child: Row(
+                  children: [
+                    _buildSidebar(),
+                    Expanded(
+                      child: FadeTransition(
+                        opacity: _fadeAnimation,
+                        child: _buildMainContent(),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -337,49 +418,65 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildLogo() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ClipRRect(
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            setState(() {
+              _selectedIndex = 0;
+            });
+          },
           borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.08),
+          hoverColor: Colors.white.withOpacity(0.06),
+          splashColor: Colors.white.withOpacity(0.1),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withOpacity(0.25), width: 1),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'NSB Motors Ug',
-                        style: GoogleFonts.poppins(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white.withOpacity(0.25), width: 1),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'NSB Motors Ug',
+                              style: GoogleFonts.poppins(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            Text(
+                              'Vehicle Sales Management',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                color: Colors.white.withOpacity(0.7),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                      Text(
-                        'Vehicle Sales Management',
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          color: Colors.white.withOpacity(0.7),
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 
@@ -394,6 +491,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       {'icon': FontAwesomeIcons.chartBar, 'title': 'Reports', 'index': 6},
       {'icon': FontAwesomeIcons.palette, 'title': 'Theme', 'index': 7},
       {'icon': FontAwesomeIcons.whatsapp, 'title': 'WhatsApp', 'index': 8},
+      // Design Lab disabled — invoice PDF unchanged (still uses same layout)
+      // {'icon': FontAwesomeIcons.flask, 'title': 'Design Lab', 'index': 9},
     ];
 
     return ConstrainedBox(
@@ -412,9 +511,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               child: Material(
                 color: Colors.transparent,
                 child: InkWell(
-                  onTap: () {
+                  onTap: () async {
+                    final index = item['index'] as int;
+                    if (_kLockedNavIndices.contains(index)) {
+                      final granted = await _showAccessCodeDialog(context);
+                      if (granted != true || !mounted) return;
+                    }
                     setState(() {
-                      _selectedIndex = item['index'] as int;
+                      _selectedIndex = index;
                     });
                   },
                   borderRadius: BorderRadius.circular(12),
@@ -617,6 +721,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 });
               },
             );
+          case 9:
+            // Design Lab disabled — fallback to dashboard
+            return const GlassDashboardScreen();
           default:
             return const GlassDashboardScreen();
         }

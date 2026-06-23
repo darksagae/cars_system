@@ -70,21 +70,31 @@ class InvoiceProvider extends ChangeNotifier {
   // Add new invoice
   Future<bool> addInvoice(Invoice invoice) async {
     try {
+      print(' InvoiceProvider: Adding invoice with number: ${invoice.invoiceNumber}');
       final id = await _invoiceService.createInvoice(invoice);
+      print(' InvoiceProvider: Service returned ID: $id');
       if (id > 0) {
         final newInvoice = invoice.copyWith(id: id);
         _invoices.add(newInvoice);
         
         // Update customer statistics
-        await _customerService.updateCustomerStats(invoice.customerId);
+        try {
+          await _customerService.updateCustomerStats(invoice.customerId);
+        } catch (e) {
+          print('⚠️ Error updating customer stats: $e');
+        }
         
         searchInvoices(_searchQuery); // Refresh filtered list
+        notifyListeners(); // Notify listeners of the change
+        print('✅ InvoiceProvider: Invoice added successfully, ID: $id');
         return true;
       }
+      print('❌ InvoiceProvider: Invalid ID returned: $id');
       return false;
     } catch (e) {
       if (kDebugMode) {
-        print('Error adding invoice: $e');
+        print('❌ InvoiceProvider: Error adding invoice: $e');
+        print('   Stack trace: ${StackTrace.current}');
       }
       return false;
     }
@@ -93,19 +103,29 @@ class InvoiceProvider extends ChangeNotifier {
   // Update invoice
   Future<bool> updateInvoice(Invoice invoice) async {
     try {
+      print('📝 InvoiceProvider: Updating invoice ID: ${invoice.id}');
       final result = await _invoiceService.updateInvoice(invoice);
+      print('📝 InvoiceProvider: Service returned result: $result');
       if (result > 0) {
         final index = _invoices.indexWhere((i) => i.id == invoice.id);
         if (index != -1) {
           _invoices[index] = invoice;
           searchInvoices(_searchQuery); // Refresh filtered list
+        } else {
+          // Invoice not in list, add it
+          _invoices.add(invoice);
+          searchInvoices(_searchQuery);
         }
+        notifyListeners(); // Notify listeners of the change
+        print('✅ InvoiceProvider: Invoice updated successfully');
         return true;
       }
+      print('❌ InvoiceProvider: Update returned invalid result: $result');
       return false;
     } catch (e) {
       if (kDebugMode) {
-        print('Error updating invoice: $e');
+        print('❌ InvoiceProvider: Error updating invoice: $e');
+        print('   Stack trace: ${StackTrace.current}');
       }
       return false;
     }
@@ -202,7 +222,10 @@ class InvoiceProvider extends ChangeNotifier {
       if (kDebugMode) {
         print('Error generating invoice number: $e');
       }
-      return 'INV-000001';
+      final now = DateTime.now();
+      final dd = now.day.toString().padLeft(2, '0');
+      final mm = now.month.toString().padLeft(2, '0');
+      return 'INV-$dd$mm-00001';
     }
   }
 

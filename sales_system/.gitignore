@@ -43,3 +43,16 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Windows build artifacts and installers
+installer_temp/
+deployment_package/
+dist/
+windows/flutter/ephemeral/
+*.pdb
+*.dll.pdb
+
+# Additional build outputs
+**/flutter_assets/kernel_blob.bin
+**/app.dill
+**/app.so

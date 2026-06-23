@@ -41,11 +41,20 @@ class _SignupScreenState extends State<SignupScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Create Your Account',
+                    'Setup New Device',
                     style: GoogleFonts.poppins(
                       fontSize: 24,
                       fontWeight: FontWeight.w700,
                       color: Colors.white,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Create your account to access the system',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.white.withOpacity(0.7),
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -102,14 +111,25 @@ class _SignupScreenState extends State<SignupScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
     try {
+      // Check if this is the first user - if so, make them admin
+      final hasAnyUser = await _auth.hasAnyUser();
+      final role = hasAnyUser ? 'user' : 'admin'; // First user is admin
+      
       await _auth.createUser(
         username: _usernameController.text.trim(),
         password: _passwordController.text,
+        role: role,
       );
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Account created. Please sign in.', style: GoogleFonts.poppins()),
+            content: Text(
+              role == 'admin' 
+                ? 'Admin account created successfully! Please sign in.' 
+                : 'Account created. Please sign in.',
+              style: GoogleFonts.poppins(),
+            ),
             backgroundColor: GlassLiquidTheme.accentGreen,
           ),
         );

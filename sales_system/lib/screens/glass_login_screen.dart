@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
+import '../services/session_timeout_service.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -25,6 +27,10 @@ class _GlassLoginScreenState extends State<GlassLoginScreen>
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
+  Timer? _autoLoginDebounce;
+  bool _navigatedToHome = false;
+
+  static const Duration _autoLoginDebounceDuration = Duration(milliseconds: 400);
   
   late AnimationController _backgroundAnimationController;
   late AnimationController _formAnimationController;
@@ -61,10 +67,71 @@ class _GlassLoginScreenState extends State<GlassLoginScreen>
     ));
     
     _formAnimationController.forward();
+
+    _usernameController.addListener(_onCredentialsChanged);
+    _passwordController.addListener(_onCredentialsChanged);
+  }
+
+  void _onCredentialsChanged() {
+    _autoLoginDebounce?.cancel();
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text.trim();
+    if (username.isEmpty || password.isEmpty) {
+      return;
+    }
+    _autoLoginDebounce = Timer(_autoLoginDebounceDuration, _trySilentAutoLogin);
+  }
+
+  /// Runs [validateLogin] when both fields are non-empty. Invalid credentials stay silent.
+  Future<void> _trySilentAutoLogin() async {
+    if (!mounted || _isLoading || _navigatedToHome) return;
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text.trim();
+    if (username.isEmpty || password.isEmpty) return;
+
+    final ok = await AuthService().validateLogin(username: username, password: password);
+    if (!mounted || _isLoading || _navigatedToHome) return;
+    if (ok) {
+      await _completeLoginSuccess(username);
+    }
+  }
+
+  Future<void> _completeLoginSuccess(String username) async {
+    if (_navigatedToHome) return;
+    _navigatedToHome = true;
+    await AuthService().setCurrentUser(username);
+    SessionTimeoutService.instance.startSession();
+    if (!mounted) return;
+    HapticFeedback.mediumImpact();
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => const HomeScreen(),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0.0, 0.1),
+                end: Offset.zero,
+              ).animate(CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              )),
+              child: child,
+            ),
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 600),
+      ),
+    );
   }
 
   @override
   void dispose() {
+    _autoLoginDebounce?.cancel();
+    _usernameController.removeListener(_onCredentialsChanged);
+    _passwordController.removeListener(_onCredentialsChanged);
     _usernameController.dispose();
     _passwordController.dispose();
     _backgroundAnimationController.dispose();
@@ -140,18 +207,39 @@ class _GlassLoginScreenState extends State<GlassLoginScreen>
     return Container(
       padding: const EdgeInsets.all(60),
       child: Center(
-        child: SingleChildScrollView(
-          child: AnimatedBuilder(
-            animation: _formAnimation,
-            builder: (context, child) {
-              return Transform.translate(
-                offset: Offset(0, 50 * (1 - _formAnimation.value)),
-                child: Opacity(
-                  opacity: _formAnimation.value,
-                  child: _buildLoginForm(),
-                ),
-              );
+        child: Shortcuts(
+          shortcuts: {
+            LogicalKeySet(LogicalKeyboardKey.enter): const ActivateIntent(),
+            LogicalKeySet(LogicalKeyboardKey.numpadEnter): const ActivateIntent(),
+          },
+          child: Actions(
+            actions: {
+              ActivateIntent: CallbackAction<ActivateIntent>(
+                onInvoke: (intent) {
+                  if (!_isLoading) {
+                    _handleLogin();
+                  }
+                  return null;
+                },
+              ),
             },
+            child: Focus(
+              autofocus: true,
+              child: SingleChildScrollView(
+                child: AnimatedBuilder(
+                  animation: _formAnimation,
+                  builder: (context, child) {
+                    return Transform.translate(
+                      offset: Offset(0, 50 * (1 - _formAnimation.value)),
+                      child: Opacity(
+                        opacity: _formAnimation.value,
+                        child: _buildLoginForm(),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -374,6 +462,7 @@ class _GlassLoginScreenState extends State<GlassLoginScreen>
   }
 
   Future<void> _handleLogin() async {
+    _autoLoginDebounce?.cancel();
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -387,40 +476,13 @@ class _GlassLoginScreenState extends State<GlassLoginScreen>
     final password = _passwordController.text.trim();
     final isValid = await AuthService().validateLogin(username: username, password: password);
     if (isValid) {
-      await AuthService().setCurrentUser(username);
-      // Login successful
-      if (mounted) {
-        HapticFeedback.mediumImpact();
-        Navigator.pushReplacement(
-          context,
-          PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) => const HomeScreen(),
-            transitionsBuilder: (context, animation, secondaryAnimation, child) {
-              return FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0.0, 0.1),
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeOutCubic,
-                  )),
-                  child: child,
-                ),
-              );
-            },
-            transitionDuration: const Duration(milliseconds: 600),
-          ),
-        );
-      }
+      await _completeLoginSuccess(username);
     } else {
-      // Login failed
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
-        
+
         HapticFeedback.heavyImpact();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

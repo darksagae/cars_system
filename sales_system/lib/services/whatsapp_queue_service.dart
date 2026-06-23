@@ -1,12 +1,9 @@
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'postgres_service.dart';
 import 'whatsapp_message_tracking_service.dart';
 
 /// WhatsApp Queue Service
 /// 
-/// Stores messages in Supabase queue for mobile app to process.
-/// Works from anywhere - no WiFi requirement!
+/// Stores messages in Neon PostgreSQL queue for mobile app to process.
 class WhatsAppQueueService {
   static final WhatsAppQueueService _instance = WhatsAppQueueService._internal();
   factory WhatsAppQueueService() => _instance;
@@ -17,21 +14,9 @@ class WhatsAppQueueService {
     required String phoneNumber,
     required String message,
     String? messageType,
-    String? mediaPath,
+    String? mediaPath, // Base64 Data URI or URL
   }) async {
     try {
-      // Check if Supabase is initialized
-      SupabaseClient? supabase;
-      try {
-        supabase = Supabase.instance.client;
-      } catch (e) {
-        throw Exception('Supabase not initialized: $e');
-      }
-      
-      if (supabase == null) {
-        throw Exception('Supabase client not available');
-      }
-
       // Get machine and user info
       final trackingService = WhatsAppMessageTrackingService();
       final machineId = await trackingService.getMachineId();
@@ -45,23 +30,29 @@ class WhatsAppQueueService {
         formattedNumber = '256$formattedNumber';
       }
 
-      // Insert into queue
-      final response = await supabase
-          .from('whatsapp_message_queue')
-          .insert({
-            'phone_number': formattedNumber,
-            'message_content': message,
-            'message_type': messageType ?? 'message',
-            'media_path': mediaPath,
-            'sent_by_machine_id': machineId,
-            'sent_by_user_id': userProfile['userId'],
-            'sent_by_user_name': userProfile['userName'],
-            'status': 'pending',
-          })
-          .select('id')
-          .single();
+      // Insert into queue via PostgresService
+      final response = await PostgresService.query(
+        '''
+        INSERT INTO whatsapp_message_queue (phone_number, message_content, message_type, media_path, sent_by_machine_id, sent_by_user_id, sent_by_user_name, status)
+        VALUES (@phone, @message, @type, @media, @machineId, @userId, @userName, 'pending')
+        RETURNING id
+        ''',
+        parameters: {
+          'phone': formattedNumber,
+          'message': message,
+          'type': messageType ?? 'message',
+          'media': mediaPath,
+          'machineId': machineId,
+          'userId': userProfile['userId'],
+          'userName': userProfile['userName'],
+        },
+      );
 
-      final queueId = response['id'] as String;
+      if (response.isEmpty) {
+        throw Exception('Insert returned empty result');
+      }
+
+      final queueId = response.first['id'] as String;
       print('✅ Message queued successfully: $queueId');
       
       return queueId;
@@ -74,22 +65,13 @@ class WhatsAppQueueService {
   /// Check message status
   Future<Map<String, dynamic>?> getMessageStatus(String queueId) async {
     try {
-      SupabaseClient? supabase;
-      try {
-        supabase = Supabase.instance.client;
-      } catch (e) {
-        return null;
-      }
-      
-      if (supabase == null) return null;
+      final response = await PostgresService.query(
+        'SELECT * FROM whatsapp_message_queue WHERE id = @id::uuid LIMIT 1',
+        parameters: {'id': queueId},
+      );
 
-      final response = await supabase
-          .from('whatsapp_message_queue')
-          .select('*')
-          .eq('id', queueId)
-          .maybeSingle();
-
-      return response;
+      if (response.isEmpty) return null;
+      return response.first;
     } catch (e) {
       print('Error getting message status: $e');
       return null;
@@ -99,26 +81,15 @@ class WhatsAppQueueService {
   /// Get pending messages for this machine
   Future<List<Map<String, dynamic>>> getPendingMessages() async {
     try {
-      SupabaseClient? supabase;
-      try {
-        supabase = Supabase.instance.client;
-      } catch (e) {
-        return [];
-      }
-      
-      if (supabase == null) return [];
-
       final trackingService = WhatsAppMessageTrackingService();
       final machineId = await trackingService.getMachineId();
 
-      final response = await supabase
-          .from('whatsapp_message_queue')
-          .select('*')
-          .eq('sent_by_machine_id', machineId)
-          .eq('status', 'pending')
-          .order('created_at', ascending: true);
+      final response = await PostgresService.query(
+        'SELECT * FROM whatsapp_message_queue WHERE sent_by_machine_id = @machineId AND status = \'pending\' ORDER BY created_at ASC',
+        parameters: {'machineId': machineId},
+      );
 
-      return List<Map<String, dynamic>>.from(response);
+      return response;
     } catch (e) {
       print('Error getting pending messages: $e');
       return [];
@@ -157,8 +128,3 @@ class WhatsAppQueueService {
     throw Exception('Message processing timeout');
   }
 }
-
-
-
-
-

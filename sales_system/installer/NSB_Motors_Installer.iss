@@ -2,16 +2,16 @@
 ; Windows 11 Compatible Installer Script
 ; Created for NSB Motors Uganda
 
-#define MyAppName "NSB Motors Ug"
+#define MyAppName "NSB Motors"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "NSB Motors Uganda"
 #define MyAppURL "https://nsbbsolutions@gmail.com"
-#define MyAppExeName "nsb_motors_ug.exe"
+#define MyAppExeName "nsb_motors.exe"
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application.
 ; Do not use the same AppId value in installers for other applications.
-AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
+AppId={{8F1D4E6A-9B3C-4D2E-A1F2-C3B4D5E6F7A8}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
@@ -50,7 +50,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; OnlyBelowVersion: 6.1; Check: not IsAdminInstallMode
 
 [Files]
-Source: "C:\path\to\built\app\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files

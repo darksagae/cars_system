@@ -9,81 +9,80 @@ class DatabaseManagementScreen extends StatefulWidget {
   const DatabaseManagementScreen({Key? key}) : super(key: key);
 
   @override
-  State<DatabaseManagementScreen> createState() => _DatabaseManagementScreenState();
+  State<DatabaseManagementScreen> createState() =>
+      _DatabaseManagementScreenState();
 }
 
 class _DatabaseManagementScreenState extends State<DatabaseManagementScreen> {
   final TextEditingController _monthController = TextEditingController();
   final TextEditingController _fileNameController = TextEditingController();
   final TextEditingController _exchangeRateController = TextEditingController();
+  String? _selectedFilePath;
+
+  static const _canvas = Color(0xFFF8FAFC);
+  static const _ink = Color(0xFF0F172A);
+  static const _secondary = Color(0xFF64748B);
+  static const _border = Color(0xFFE2E8F0);
+  static const _accent = Color(0xFF1D4ED8);
 
   @override
   void initState() {
     super.initState();
-    // Auto-select current month/year for database
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _setDefaultMonth();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _setDefaultMonth());
   }
 
   void _setDefaultMonth() {
     if (_monthController.text.isEmpty) {
-      final now = DateTime.now();
-      final monthNames = [
+      const monthNames = [
         'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'
+        'July', 'August', 'September', 'October', 'November', 'December',
       ];
-      setState(() {
-        _monthController.text = '${monthNames[now.month - 1]} ${now.year}';
-      });
+      final now = DateTime.now();
+      setState(
+          () => _monthController.text = '${monthNames[now.month - 1]} ${now.year}');
     }
+  }
+
+  @override
+  void dispose() {
+    _monthController.dispose();
+    _fileNameController.dispose();
+    _exchangeRateController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: _canvas,
       appBar: AppBar(
-        title: LayoutBuilder(
-          builder: (context, constraints) {
-            return FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Database Management',
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            );
-          },
+        title: const Text('Database'),
+        backgroundColor: Colors.white,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Divider(height: 1, color: _border),
         ),
-        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
-        elevation: 0,
         actions: [
           IconButton(
-            onPressed: () {
-              context.read<AppProvider>().refresh();
-            },
-            icon: const Icon(Icons.refresh, color: Colors.white),
+            onPressed: () => context.read<AppProvider>().refresh(),
+            icon: const Icon(Icons.refresh_rounded, size: 20),
           ),
+          const SizedBox(width: 4),
         ],
       ),
       body: Consumer<AppProvider>(
         builder: (context, appProvider, child) {
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildExchangeRateSection(context, appProvider),
-                const SizedBox(height: 24),
-                _buildUraDatabaseSection(context, appProvider),
-                const SizedBox(height: 24),
+                _buildExchangeRateCard(context, appProvider),
+                const SizedBox(height: 20),
+                _buildUraUploadCard(context, appProvider),
+                const SizedBox(height: 28),
+                _buildSectionLabel('Recent Updates'),
+                const SizedBox(height: 12),
                 _buildRecentUpdates(appProvider),
               ],
             ),
@@ -93,345 +92,341 @@ class _DatabaseManagementScreenState extends State<DatabaseManagementScreen> {
     );
   }
 
-  Widget _buildExchangeRateSection(BuildContext context, AppProvider appProvider) {
+  Widget _buildSectionLabel(String label) {
+    return Text(
+      label.toUpperCase(),
+      style: GoogleFonts.plusJakartaSans(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: const Color(0xFF94A3B8),
+        letterSpacing: 1.2,
+      ),
+    );
+  }
+
+  Widget _buildExchangeRateCard(
+      BuildContext context, AppProvider appProvider) {
     final currentRate = appProvider.currentExchangeRate;
     final rate = currentRate?['rate'] ?? 3700.0;
     final source = currentRate?['source'] ?? 'Unknown';
     final date = currentRate?['effective_date'] ?? '';
 
     return Container(
-      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _border),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.currency_exchange, color: Color(0xFFFF9800), size: 28),
-              const SizedBox(width: 12),
-              Text(
-                'Exchange Rate',
-                style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Text(
-                  'Current Rate',
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    color: Colors.white70,
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFFBEB),
+                    borderRadius: BorderRadius.circular(14),
                   ),
+                  child: const Icon(Icons.currency_exchange_rounded,
+                      color: Color(0xFFD97706), size: 22),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'UGX ${rate.toStringAsFixed(0)} per USD',
-                  style: GoogleFonts.poppins(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Source: $source • Updated: ${_formatDate(date)}',
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    color: Colors.white54,
-                  ),
+                const SizedBox(width: 14),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Exchange Rate',
+                        style: GoogleFonts.plusJakartaSans(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: _ink)),
+                    Text('USD to UGX conversion',
+                        style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12, color: _secondary)),
+                  ],
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _exchangeRateController,
-                  keyboardType: TextInputType.number,
-                  style: GoogleFonts.poppins(color: Colors.white),
-                  decoration: InputDecoration(
-                    labelText: 'New Exchange Rate',
-                    hintText: '3700',
-                    labelStyle: GoogleFonts.poppins(color: Colors.white70),
-                    hintStyle: GoogleFonts.poppins(color: Colors.white30),
-                    filled: true,
-                    fillColor: const Color(0xFF0A0E21),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide.none,
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Current Rate',
+                      style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          color: _secondary,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5)),
+                  const SizedBox(height: 6),
+                  Text(
+                    'UGX ${(rate as num).toStringAsFixed(0)} / USD',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: _ink,
+                      letterSpacing: -0.5,
                     ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFFFF9800)),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Source: $source  •  Updated: ${_formatDate(date)}',
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12, color: _secondary),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _exchangeRateController,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'New Rate (UGX)',
+                      hintText: '3700',
+                      prefixIcon: const Icon(Icons.edit_rounded, size: 18),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              ElevatedButton.icon(
-                onPressed: appProvider.isLoading ? null : () => _updateExchangeRate(context, appProvider),
-                icon: const Icon(Icons.update, size: 18),
-                label: const Text('Update'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  onPressed: appProvider.isLoading
+                      ? null
+                      : () => _updateExchangeRate(context, appProvider),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFD97706),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 16),
                   ),
+                  child: const Text('Update'),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildUraDatabaseSection(BuildContext context, AppProvider appProvider) {
+  Widget _buildUraUploadCard(
+      BuildContext context, AppProvider appProvider) {
     return Container(
-      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _border),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.storage, color: Color(0xFF4CAF50), size: 28),
-              const SizedBox(width: 12),
-              Text(
-                'URA Database Updates',
-                style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFECFDF5),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.storage_rounded,
+                      color: Color(0xFF059669), size: 22),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Upload new URA Used MV Database files to update all desktop clients.',
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              color: Colors.white70,
+                const SizedBox(width: 14),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('URA Database',
+                        style: GoogleFonts.plusJakartaSans(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: _ink)),
+                    Text('Upload new MV database files',
+                        style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12, color: _secondary)),
+                  ],
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 16),
-          Column(
-            children: [
-              TextField(
-                controller: _monthController,
-                style: GoogleFonts.poppins(color: Colors.white),
-                decoration: InputDecoration(
-                  labelText: 'Database Month',
-                  hintText: 'October 2025',
-                  labelStyle: GoogleFonts.poppins(color: Colors.white70),
-                  hintStyle: GoogleFonts.poppins(color: Colors.white30),
-                  filled: true,
-                  fillColor: Theme.of(context).scaffoldBackgroundColor,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
-                  ),
-                ),
+            const SizedBox(height: 20),
+            TextField(
+              controller: _monthController,
+              decoration: const InputDecoration(
+                labelText: 'Database Month',
+                hintText: 'October 2025',
+                prefixIcon: Icon(Icons.calendar_month_rounded, size: 18),
               ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _fileNameController,
-                      readOnly: true,
-                      style: GoogleFonts.poppins(color: Colors.white),
-                      decoration: InputDecoration(
-                        labelText: 'File Name',
-                        hintText: 'Select PDF file...',
-                        labelStyle: GoogleFonts.poppins(color: Colors.white70),
-                        hintStyle: GoogleFonts.poppins(color: Colors.white30),
-                        filled: true,
-                        fillColor: Theme.of(context).scaffoldBackgroundColor,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide.none,
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    onPressed: () => _pickFile(context),
-                    icon: const Icon(Icons.folder_open, size: 18),
-                    label: const Text('Browse'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: appProvider.isLoading ? null : () => _uploadDatabaseUpdate(context, appProvider),
-                  icon: const Icon(Icons.upload, size: 18),
-                  label: const Text('Upload Database Update'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _fileNameController,
+                    readOnly: true,
+                    decoration: InputDecoration(
+                      labelText: 'PDF File',
+                      hintText: 'Select file...',
+                      prefixIcon:
+                          const Icon(Icons.picture_as_pdf_rounded, size: 18),
+                      suffixIcon: _fileNameController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear_rounded, size: 18),
+                              onPressed: () => setState(() {
+                                _fileNameController.clear();
+                                _selectedFilePath = null;
+                              }),
+                            )
+                          : null,
                     ),
                   ),
                 ),
+                const SizedBox(width: 10),
+                OutlinedButton.icon(
+                  onPressed: () => _pickFile(context),
+                  icon: const Icon(Icons.folder_open_rounded, size: 17),
+                  label: const Text('Browse'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 16),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: appProvider.isLoading
+                    ? null
+                    : () => _uploadDatabaseUpdate(context, appProvider),
+                icon: appProvider.isLoading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.cloud_upload_rounded, size: 18),
+                label: Text(
+                    appProvider.isLoading ? 'Uploading...' : 'Upload Database'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF059669),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
               ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildRecentUpdates(AppProvider appProvider) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Recent Updates',
-          style: GoogleFonts.poppins(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
+    if (appProvider.uraUpdates.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _border),
         ),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1F3A),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
-          ),
-          child: appProvider.uraUpdates.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      children: [
-                        Icon(
-                          Icons.storage_outlined,
-                          size: 48,
-                          color: Colors.white.withOpacity(0.3),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'No database updates yet',
-                          style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            color: Colors.white70,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: appProvider.uraUpdates.length,
-                  itemBuilder: (context, index) {
-                    final update = appProvider.uraUpdates[index];
-                    return _buildUpdateItem(update);
-                  },
+        child: Center(
+          child: Column(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(16),
                 ),
+                child: Icon(Icons.inbox_rounded,
+                    size: 26, color: Colors.grey.shade400),
+              ),
+              const SizedBox(height: 14),
+              Text('No updates yet',
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: _ink)),
+              const SizedBox(height: 4),
+              Text('Upload a database file to get started',
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12, color: _secondary)),
+            ],
+          ),
         ),
-      ],
-    );
-  }
-
-  Widget _buildUpdateItem(Map<String, dynamic> update) {
-    final status = update['status'] ?? 'pending';
-    Color statusColor;
-    IconData statusIcon;
-    
-    switch (status) {
-      case 'completed':
-        statusColor = Colors.green;
-        statusIcon = Icons.check_circle;
-        break;
-      case 'processing':
-        statusColor = Colors.orange;
-        statusIcon = Icons.hourglass_empty;
-        break;
-      default:
-        statusColor = Colors.blue;
-        statusIcon = Icons.pending;
+      );
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF0A0E21),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _border),
       ),
+      child: Column(
+        children: [
+          for (int i = 0; i < appProvider.uraUpdates.length; i++) ...[
+            _buildUpdateRow(appProvider.uraUpdates[i]),
+            if (i < appProvider.uraUpdates.length - 1)
+              Divider(height: 1, color: _border, indent: 68),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUpdateRow(Map<String, dynamic> update) {
+    final status = update['status'] ?? 'pending';
+    final Color accent;
+    final Color accentBg;
+    final IconData icon;
+
+    switch (status) {
+      case 'completed':
+        accent = const Color(0xFF059669);
+        accentBg = const Color(0xFFECFDF5);
+        icon = Icons.check_circle_rounded;
+        break;
+      case 'processing':
+        accent = const Color(0xFFD97706);
+        accentBg = const Color(0xFFFFFBEB);
+        icon = Icons.hourglass_top_rounded;
+        break;
+      default:
+        accent = _accent;
+        accentBg = const Color(0xFFEFF6FF);
+        icon = Icons.pending_rounded;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
-              color: statusColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
+              color: accentBg,
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(statusIcon, color: statusColor, size: 20),
+            child: Icon(icon, color: accent, size: 20),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -440,28 +435,23 @@ class _DatabaseManagementScreenState extends State<DatabaseManagementScreen> {
               children: [
                 Text(
                   update['month'] ?? 'Unknown Month',
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: _ink),
                 ),
                 Text(
-                  '${update['file_name'] ?? 'Unknown'} • ${update['record_count'] ?? 0} records',
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    color: Colors.white70,
-                  ),
+                  '${update['file_name'] ?? 'Unknown'}  •  ${update['record_count'] ?? 0} records',
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12, color: _secondary),
                 ),
               ],
             ),
           ),
           Text(
             _formatDate(update['created_at'] ?? ''),
-            style: GoogleFonts.poppins(
-              fontSize: 10,
-              color: Colors.white54,
-            ),
+            style: GoogleFonts.plusJakartaSans(
+                fontSize: 11, color: const Color(0xFF94A3B8)),
           ),
         ],
       ),
@@ -470,7 +460,6 @@ class _DatabaseManagementScreenState extends State<DatabaseManagementScreen> {
 
   String _formatDate(String dateStr) {
     if (dateStr.isEmpty) return 'Unknown';
-    
     try {
       final dateTime = DateTime.parse(dateStr);
       return '${dateTime.day}/${dateTime.month}';
@@ -479,19 +468,18 @@ class _DatabaseManagementScreenState extends State<DatabaseManagementScreen> {
     }
   }
 
-  Future<void> _updateExchangeRate(BuildContext context, AppProvider appProvider) async {
+  Future<void> _updateExchangeRate(
+      BuildContext context, AppProvider appProvider) async {
     final rateText = _exchangeRateController.text.trim();
     if (rateText.isEmpty) {
       _showError(context, 'Please enter an exchange rate');
       return;
     }
-
     final rate = double.tryParse(rateText);
     if (rate == null || rate <= 0) {
       _showError(context, 'Please enter a valid exchange rate');
       return;
     }
-
     final success = await appProvider.updateExchangeRate(rate, 'Mobile App');
     if (success) {
       _exchangeRateController.clear();
@@ -501,15 +489,12 @@ class _DatabaseManagementScreenState extends State<DatabaseManagementScreen> {
     }
   }
 
-  String? _selectedFilePath;
-
   Future<void> _pickFile(BuildContext context) async {
     try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf'],
       );
-
       if (result != null && result.files.single.path != null) {
         setState(() {
           _selectedFilePath = result.files.single.path;
@@ -521,7 +506,8 @@ class _DatabaseManagementScreenState extends State<DatabaseManagementScreen> {
     }
   }
 
-  Future<void> _uploadDatabaseUpdate(BuildContext context, AppProvider appProvider) async {
+  Future<void> _uploadDatabaseUpdate(
+      BuildContext context, AppProvider appProvider) async {
     final month = _monthController.text.trim();
     final fileName = _fileNameController.text.trim();
 
@@ -529,94 +515,63 @@ class _DatabaseManagementScreenState extends State<DatabaseManagementScreen> {
       _showError(context, 'Please fill in all fields and select a file');
       return;
     }
-
     if (_selectedFilePath == null) {
       _showError(context, 'Please select a PDF file');
       return;
     }
 
-    // Show loading
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => Center(
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.black87,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 16),
-              Text(
-                'Uploading database file...',
-                style: GoogleFonts.poppins(color: Colors.white),
-              ),
-            ],
-          ),
+      builder: (context) => AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text('Uploading database file...',
+                style: GoogleFonts.plusJakartaSans()),
+          ],
         ),
       ),
     );
 
     try {
-      print('🚀 Starting database update upload process...');
-      print('   Month: $month');
-      print('   File: $fileName');
-      
-      // Upload file to Supabase Storage
-      final file = await SupabaseService.uploadDatabaseFile(_selectedFilePath!, fileName);
-      
+      final file = await SupabaseService.uploadDatabaseFile(
+          _selectedFilePath!, fileName);
       if (file != null) {
-        print('📝 Creating database update record...');
         final success = await appProvider.createUraDatabaseUpdate(
           month: month,
           fileName: fileName,
-          recordCount: 0, // Record count will be determined when PDF is processed
+          recordCount: 0,
           fileUrl: file,
         );
 
+        if (context.mounted) Navigator.pop(context);
+
         if (success) {
-          print('🎉 Database update upload completed successfully!');
-          
-          // Reset form
-          _monthController.text = ''; // Will be auto-filled in initState
-          final now = DateTime.now();
-          final monthNames = [
-            'January', 'February', 'March', 'April', 'May', 'June',
-            'July', 'August', 'September', 'October', 'November', 'December'
-          ];
-          _monthController.text = '${monthNames[now.month - 1]} ${now.year}';
-          _fileNameController.clear();
-          _selectedFilePath = null;
-          
-          Navigator.pop(context); // Close loading dialog
+          _setDefaultMonth();
+          setState(() {
+            _fileNameController.clear();
+            _selectedFilePath = null;
+          });
           _showSuccess(context, 'Database update uploaded successfully');
         } else {
-          print('❌ Failed to create database update record');
-          Navigator.pop(context); // Close loading dialog
           _showError(context, 'Failed to create database update');
         }
       } else {
-        print('❌ File upload returned null URL');
-        Navigator.pop(context); // Close loading dialog
+        if (context.mounted) Navigator.pop(context);
         _showError(context, 'Failed to upload file');
       }
     } catch (e) {
-      print('❌ Error during upload: $e');
-      Navigator.pop(context); // Close loading dialog
+      if (context.mounted) Navigator.pop(context);
       _showError(context, 'Error: $e');
     }
   }
 
   void _showSuccess(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-      ),
+      SnackBar(content: Text(message)),
     );
   }
 
@@ -624,17 +579,8 @@ class _DatabaseManagementScreenState extends State<DatabaseManagementScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red,
+        backgroundColor: const Color(0xFFDC2626),
       ),
     );
   }
-
-  @override
-  void dispose() {
-    _monthController.dispose();
-    _fileNameController.dispose();
-    _exchangeRateController.dispose();
-    super.dispose();
-  }
 }
-

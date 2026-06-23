@@ -433,9 +433,9 @@ class UraLookupService {
     String whereClause = 'is_active = 1';
     List<dynamic> whereArgs = [];
     
-    // Text search across multiple fields
+    // Text search across multiple fields (case-insensitive)
     if (searchQuery != null && searchQuery.isNotEmpty) {
-      whereClause += ' AND (make LIKE ? OR model LIKE ? OR description LIKE ? OR serial_number LIKE ?)';
+      whereClause += ' AND (UPPER(make) LIKE UPPER(?) OR UPPER(model) LIKE UPPER(?) OR UPPER(description) LIKE UPPER(?) OR UPPER(serial_number) LIKE UPPER(?))';
       final query = '%$searchQuery%';
       whereArgs.addAll([query, query, query, query]);
     }

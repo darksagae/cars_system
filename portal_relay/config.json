@@ -1,0 +1,29 @@
+{
+  "admin_password": "nsb@admin2025",
+  "machines": [
+    {
+      "id": "M001",
+      "name": "Reception PC",
+      "location": "Front Desk",
+      "password": "reception2025"
+    },
+    {
+      "id": "M002",
+      "name": "Sales Office",
+      "location": "Sales Room",
+      "password": "sales2025"
+    },
+    {
+      "id": "M003",
+      "name": "Manager PC",
+      "location": "Manager Office",
+      "password": "manager2025"
+    },
+    {
+      "id": "M004",
+      "name": "Accounts PC",
+      "location": "Accounts",
+      "password": "accounts2025"
+    }
+  ]
+}
