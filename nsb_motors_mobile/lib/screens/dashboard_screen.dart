@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../providers/app_provider.dart';
+import '../theme/leon_theme.dart';
+import '../widgets/leon/leon_bezel_card.dart';
+import '../widgets/leon/leon_section_header.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -14,12 +16,11 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   Timer? _refreshTimer;
 
-  static const _ink = Color(0xFF0F172A);
-  static const _secondary = Color(0xFF64748B);
-  static const _muted = Color(0xFF94A3B8);
-  static const _border = Color(0xFFE2E8F0);
-  static const _canvas = Color(0xFFF8FAFC);
-  static const _accent = Color(0xFF1D4ED8);
+  static const _ink = LeonColors.ink;
+  static const _secondary = LeonColors.secondary;
+  static const _muted = LeonColors.muted;
+  static const _canvas = LeonColors.canvas;
+  static const _accent = LeonColors.accent;
 
   @override
   void initState() {
@@ -99,11 +100,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           return FlexibleSpaceBar(
             background: Container(
               decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF1D4ED8), Color(0xFF3B82F6)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+                gradient: leonHeroGradient,
               ),
               child: Stack(
                 children: [
@@ -140,21 +137,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         children: [
                           Text(
                             'NSB Motors',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white.withOpacity(0.7),
-                              letterSpacing: 1.5,
+                            style: LeonTypography.sectionLabel(
+                              color: Colors.white.withValues(alpha: 0.7),
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             'Management Dashboard',
-                            style: GoogleFonts.plusJakartaSans(
+                            style: LeonTypography.heading(
                               fontSize: 24,
                               fontWeight: FontWeight.w800,
                               color: Colors.white,
-                              letterSpacing: -0.5,
                             ),
                           ),
                           const SizedBox(height: 20),
@@ -201,7 +194,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       children: [
         Text(
           value,
-          style: GoogleFonts.plusJakartaSans(
+          style: LeonTypography.num(
             fontSize: 18,
             fontWeight: FontWeight.w800,
             color: Colors.white,
@@ -209,9 +202,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         Text(
           label,
-          style: GoogleFonts.plusJakartaSans(
+          style: LeonTypography.sans(
             fontSize: 10,
-            color: Colors.white.withOpacity(0.65),
+            color: Colors.white.withValues(alpha: 0.65),
             height: 1.4,
           ),
         ),
@@ -220,15 +213,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildSectionHeader(String title) {
-    return Text(
-      title.toUpperCase(),
-      style: GoogleFonts.plusJakartaSans(
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        color: _muted,
-        letterSpacing: 1.2,
-      ),
-    );
+    return LeonSectionHeader(title, color: _muted);
   }
 
   Widget _buildBentoGrid(AppProvider appProvider) {
@@ -250,8 +235,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 title: 'Active Clients',
                 value: '$activeClients',
                 icon: Icons.computer_rounded,
-                accent: const Color(0xFF1D4ED8),
-                accentBg: const Color(0xFFEFF6FF),
+                accent: LeonColors.accent,
+                accentBg: LeonColors.accentLight,
                 tall: true,
               ),
             ),
@@ -264,8 +249,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     title: 'DB Status',
                     value: 'Online',
                     icon: Icons.cloud_done_rounded,
-                    accent: const Color(0xFF059669),
-                    accentBg: const Color(0xFFECFDF5),
+                    accent: LeonColors.success,
+                    accentBg: LeonColors.successBg,
                     tall: false,
                   ),
                   const SizedBox(height: 12),
@@ -303,14 +288,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required Color accentBg,
     required bool tall,
   }) {
-    return Container(
+    return LeonBezelCard(
+      padding: EdgeInsets.zero,
+      child: SizedBox(
       height: tall ? 160 : 82,
+      child: Padding(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _border),
-      ),
       child: tall
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -330,16 +313,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   children: [
                     Text(
                       value,
-                      style: GoogleFonts.plusJakartaSans(
+                      style: LeonTypography.num(
                         fontSize: 32,
                         fontWeight: FontWeight.w800,
                         color: _ink,
-                        letterSpacing: -1,
                       ),
                     ),
                     Text(
                       title,
-                      style: GoogleFonts.plusJakartaSans(
+                      style: LeonTypography.sans(
                         fontSize: 12,
                         color: _secondary,
                       ),
@@ -367,7 +349,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     children: [
                       Text(
                         value,
-                        style: GoogleFonts.plusJakartaSans(
+                        style: LeonTypography.mono(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
                           color: _ink,
@@ -378,7 +360,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       Text(
                         title,
-                        style: GoogleFonts.plusJakartaSans(
+                        style: LeonTypography.sans(
                           fontSize: 10,
                           color: _secondary,
                           height: 1.2,
@@ -391,6 +373,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ],
             ),
+      ),
+      ),
     );
   }
 
@@ -402,13 +386,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required Color accent,
     required Color accentBg,
   }) {
-    return Container(
+    return LeonBezelCard(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _border),
-      ),
       child: Row(
         children: [
           Container(
@@ -427,18 +406,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 Text(
                   value,
-                  style: GoogleFonts.plusJakartaSans(
+                  style: LeonTypography.num(
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
                     color: _ink,
-                    letterSpacing: -0.5,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
                   '$title  •  $subtitle',
-                  style: GoogleFonts.plusJakartaSans(
+                  style: LeonTypography.sans(
                     fontSize: 12,
                     color: _secondary,
                   ),
@@ -457,7 +435,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             child: Text(
               'LIVE',
-              style: GoogleFonts.plusJakartaSans(
+              style: LeonTypography.mono(
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
                 color: accent,
@@ -488,8 +466,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             'Manage Clients',
             'View desktop clients',
             Icons.computer_rounded,
-            const Color(0xFF1D4ED8),
-            const Color(0xFFEFF6FF),
+            LeonColors.accent,
+            LeonColors.accentLight,
           ),
         ),
       ],
@@ -503,13 +481,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     Color accent,
     Color accentBg,
   ) {
-    return Container(
+    return LeonBezelCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _border),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -525,7 +498,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(height: 14),
           Text(
             title,
-            style: GoogleFonts.plusJakartaSans(
+            style: LeonTypography.sans(
               fontSize: 13,
               fontWeight: FontWeight.w700,
               color: _ink,
@@ -534,7 +507,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(height: 2),
           Text(
             subtitle,
-            style: GoogleFonts.plusJakartaSans(
+            style: LeonTypography.sans(
               fontSize: 11,
               color: _secondary,
             ),
@@ -607,13 +580,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     if (items.isEmpty) {
-      return Container(
+      return LeonBezelCard(
         padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: _border),
-        ),
         child: Center(
           child: Column(
             children: [
@@ -621,7 +589,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 width: 52,
                 height: 52,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
+                  color: LeonColors.accentLight,
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Icon(Icons.history_rounded,
@@ -630,13 +598,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(height: 14),
               Text(
                 'No recent activity',
-                style: GoogleFonts.plusJakartaSans(
+                style: LeonTypography.sans(
                     fontSize: 14, fontWeight: FontWeight.w600, color: _ink),
               ),
               const SizedBox(height: 4),
               Text(
                 'Activity will show up here',
-                style: GoogleFonts.plusJakartaSans(
+                style: LeonTypography.sans(
                     fontSize: 12, color: _secondary),
               ),
             ],
@@ -645,18 +613,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _border),
-      ),
+    return LeonBezelCard(
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
           for (int i = 0; i < items.length; i++) ...[
             _buildActivityRow(items[i]),
             if (i < items.length - 1)
-              Divider(height: 1, color: _border, indent: 68),
+              const Divider(height: 1, color: LeonColors.border, indent: 68),
           ],
         ],
       ),
@@ -684,7 +648,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 Text(
                   item.title,
-                  style: GoogleFonts.plusJakartaSans(
+                  style: LeonTypography.sans(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: _ink,
@@ -693,7 +657,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(height: 1),
                 Text(
                   item.subtitle,
-                  style: GoogleFonts.plusJakartaSans(
+                  style: LeonTypography.sans(
                       fontSize: 12, color: _secondary),
                 ),
               ],
@@ -701,7 +665,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           Text(
             item.time,
-            style: GoogleFonts.plusJakartaSans(
+            style: LeonTypography.mono(
                 fontSize: 11, color: _muted),
           ),
         ],

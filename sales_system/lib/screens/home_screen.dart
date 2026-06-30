@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import '../providers/sales_provider.dart';
 import '../providers/theme_provider.dart';
+import '../services/cloud_api_service.dart';
 import '../widgets/glass_liquid_theme.dart';
 import 'glass_dashboard_screen.dart';
 import 'customers_screen.dart';
@@ -105,6 +106,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     } catch (e) {
       print('Error updating WhatsApp tracking profile: $e');
     }
+
+    await CloudApiService().syncProfileToCloud(
+      displayName: _userName,
+      email: _userEmail,
+      phone: _userPhone,
+    );
   }
   
   Future<bool> _showAccessCodeDialog(BuildContext context) async {

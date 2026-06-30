@@ -195,6 +195,8 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   bool _includePhaseTwo = false;
   /// Include tax to URA in invoice. Default true (always ticked).
   bool _includeTaxToUra = true;
+  /// Duty-free: only registration fee, stamp duty, and reg form (no import/VAT/levy taxes).
+  bool _dutyFree = false;
   static const String _defaultNumberPlates = '714300';
   static const String _defaultThirdPartyInsurance = '70000';
   static const String _defaultAgentFees = '400000';
@@ -470,13 +472,14 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       ));
     }
 
-    // URA taxes are ALWAYS included.
-    // Phase 2 toggle only controls extra registration fees (plates/insurance/agent), not URA taxes.
+    // URA taxes or duty-free fees
     final ura = _phaseTwoUraTaxesTotal();
     if (ura > 0) {
       items.add(InvoiceItem(
-        productName: 'Taxes payable to URA',
-        description: 'Import Duty, VAT, WHT, Environmental & Infrastructure Levy, IDF, Stamp, Reg Form',
+        productName: _dutyFree ? 'Duty fees' : 'Taxes payable to URA',
+        description: _dutyFree
+            ? 'Registration Fee, Stamp Duty, Registration Form'
+            : 'Import Duty, VAT, WHT, Environmental & Infrastructure Levy, IDF, Stamp, Reg Form',
         price: ura,
         quantity: 1,
         taxRate: 0,
@@ -554,7 +557,10 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
           (widget.invoice!.numberPlatesFee > 0) ||
           (widget.invoice!.thirdPartyInsurance > 0) ||
           (widget.invoice!.agencyFees > 0);
-      _includeTaxToUra = widget.invoice!.taxesURA > 0;
+      _includeTaxToUra = widget.invoice!.taxesURA > 0 && !widget.invoice!.dutyFree;
+      _dutyFree = widget.invoice!.dutyFree ||
+          widget.invoice!.notes.toLowerCase().contains('duty free: yes');
+      if (_dutyFree) _includeTaxToUra = false;
       if (_includePhaseTwo) {
         final numberPlates = widget.invoice!.numberPlatesFee > 0
             ? widget.invoice!.numberPlatesFee
@@ -1549,8 +1555,11 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     final agent = _includePhaseTwo ? (double.tryParse(_agentFeesController.text) ?? 400000.0) : 0.0;
     final registrationProcess = uraUgx + plates + insurance + agent;
 
+    buffer.writeln('Duty Free: ${_dutyFree ? 'Yes' : 'No'}');
     buffer.writeln('Include tax to URA: ${_includeTaxToUra ? 'Yes' : 'No'}');
-    if (_includeTaxToUra) {
+    if (_dutyFree) {
+      buffer.writeln('Duty fees: UGX ${NumberFormat('#,##0.00').format(uraUgx)}');
+    } else if (_includeTaxToUra) {
       buffer.writeln('URA Taxes: UGX ${NumberFormat('#,##0.00').format(uraUgx)} (USD ${NumberFormat('#,##0.00').format(rateTax == 0 ? 0 : uraUgx / rateTax)})');
     } else {
       buffer.writeln('URA Taxes: Not included');
@@ -2008,12 +2017,44 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                   children: [
                     Expanded(
                       child: CheckboxListTile(
-                        value: _includeTaxToUra,
+                        value: _dutyFree,
                         onChanged: (v) {
                           setState(() {
-                            _includeTaxToUra = v ?? true;
+                            _dutyFree = v ?? false;
+                            if (_dutyFree) _includeTaxToUra = false;
                           });
                         },
+                        title: Text(
+                          'Duty free',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Only registration fee, stamp duty and reg form',
+                          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
+                        ),
+                        controlAffinity: ListTileControlAffinity.leading,
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: CheckboxListTile(
+                        value: _includeTaxToUra,
+                        onChanged: _dutyFree
+                            ? null
+                            : (v) {
+                                setState(() {
+                                  _includeTaxToUra = v ?? true;
+                                  if (_includeTaxToUra) _dutyFree = false;
+                                });
+                              },
                         title: Text(
                           'Include tax to URA',
                           style: GoogleFonts.poppins(
@@ -2621,7 +2662,15 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     return total + ttUgx;
   }
 
+  double _dutyFreeFeesTotal() {
+    final regFee = double.tryParse(_registrationFeeController.text) ?? 1500000.0;
+    final stamp = double.tryParse(_stampDutyController.text) ?? 18000.0;
+    final regForm = double.tryParse(_regFormController.text) ?? 35000.0;
+    return regFee + stamp + regForm;
+  }
+
   double _phaseTwoUraTaxesTotal() {
+    if (_dutyFree) return _dutyFreeFeesTotal();
     // When "Include tax to URA" is unticked, do not include URA taxes (default is ticked).
     if (!_includeTaxToUra) return 0.0;
     // Taxes to URA is INDEPENDENT of Phase 2 - calculate when included
@@ -4148,7 +4197,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                     ],
                   ),
                 ),
-                if (_includeTaxToUra) ...[
+                if (_dutyFree || _includeTaxToUra) ...[
                   const SizedBox(height: 16),
                   // Tax breakdown table
                   Table(
@@ -4163,6 +4212,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                           _buildTableCellRight(Text('UGX', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white))),
                         ],
                       ),
+                      if (!_dutyFree) ...[
                       TableRow(
                         children: [
                           _buildTableCell(Text('CIF', style: GoogleFonts.poppins(color: Colors.white70))),
@@ -4210,6 +4260,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                             _buildTableCellRight(Text('${NumberFormat('#,##0.00').format(envLevy)}', style: GoogleFonts.poppins(color: Colors.white))),
                           ],
                         ),
+                      ],
                       TableRow(
                         children: [
                           _buildTableCell(Text('Registration Fee', style: GoogleFonts.poppins(color: Colors.white70))),
@@ -4242,7 +4293,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Total Taxes & Fees', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                        Text(_dutyFree ? 'Duty fees' : 'Total Taxes & Fees', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                         Text(
                           'UGX ${NumberFormat('#,##0.00').format(totalTaxes)}',
                           style: GoogleFonts.poppins(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 16),
@@ -4675,6 +4726,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       totalAmount: _calculateTotalAmount(),
       paidAmount: widget.invoice?.paidAmount ?? 0.0,
       notes: finalNotes,
+      dutyFree: _dutyFree,
       invoiceType: widget.invoice?.invoiceType ??
           (widget.type == InvoiceType.quotation ? InvoiceType.carSale : InvoiceType.invoice),
       isFinalized: widget.invoice?.isFinalized ?? false,

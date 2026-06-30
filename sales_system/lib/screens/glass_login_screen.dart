@@ -3,7 +3,9 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
+import '../services/cloud_api_service.dart';
 import '../services/session_timeout_service.dart';
+import '../database/database_helper.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -92,12 +94,63 @@ class _GlassLoginScreenState extends State<GlassLoginScreen>
     final ok = await AuthService().validateLogin(username: username, password: password);
     if (!mounted || _isLoading || _navigatedToHome) return;
     if (ok) {
-      await _completeLoginSuccess(username);
+      try {
+        final online = await CloudApiService().isServerReachable();
+        await _completeLoginSuccess(username, skipCloudLogin: !online);
+      } catch (_) {
+        _navigatedToHome = false;
+      }
     }
   }
 
-  Future<void> _completeLoginSuccess(String username) async {
+  Future<void> _completeLoginSuccess(
+    String username, {
+    bool freshMachineBind = false,
+    bool skipCloudLogin = false,
+  }) async {
     if (_navigatedToHome) return;
+
+    final cloud = CloudApiService();
+    final password = _passwordController.text;
+    final online = !skipCloudLogin && await cloud.isServerReachable();
+
+    if (online) {
+      final loginResult = await cloud.login(
+        username: username,
+        password: password,
+      );
+      if (!loginResult.ok) {
+        _navigatedToHome = false;
+        throw _LoginFlowException(
+          loginResult.error ?? 'Login failed',
+          code: loginResult.code,
+        );
+      }
+
+      final shouldWipeLocal = freshMachineBind || loginResult.freshMachineBind;
+      if (shouldWipeLocal) {
+        await DatabaseHelper().clearAllSalesData();
+      }
+
+      await AuthService().bindUserToThisMachine(username);
+      await AuthService().upsertLocalPassword(
+        username: username,
+        password: password,
+      );
+      await cloud.syncProfileFromCloud();
+      await cloud.pushProfileFromPrefs();
+      await cloud.syncInvoicesFromCloud();
+      await cloud.logActivity('user_login', metadata: await cloud.deviceMetaForActivity());
+      await cloud.sendPresence(logActivity: true);
+      cloud.startPresenceHeartbeat();
+    } else {
+      await AuthService().bindUserToThisMachine(username);
+      await AuthService().upsertLocalPassword(
+        username: username,
+        password: password,
+      );
+    }
+
     _navigatedToHome = true;
     await AuthService().setCurrentUser(username);
     SessionTimeoutService.instance.startSession();
@@ -388,22 +441,7 @@ class _GlassLoginScreenState extends State<GlassLoginScreen>
     return Align(
       alignment: Alignment.centerRight,
       child: GlassButton(
-        onPressed: () {
-          HapticFeedback.lightImpact();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Contact administrator for password reset',
-                style: GlassLiquidTheme.bodyMedium,
-              ),
-              backgroundColor: GlassLiquidTheme.accentOrange,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(GlassLiquidTheme.radiusMedium),
-              ),
-            ),
-          );
-        },
+        onPressed: _isLoading ? null : _handleForgotPassword,
         backgroundColor: Colors.transparent,
         borderColor: Colors.transparent,
         padding: const EdgeInsets.symmetric(
@@ -416,6 +454,38 @@ class _GlassLoginScreenState extends State<GlassLoginScreen>
             color: GlassLiquidTheme.accentBlue,
             fontWeight: FontWeight.w500,
           ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleForgotPassword() async {
+    HapticFeedback.lightImpact();
+    final username = _usernameController.text.trim();
+    if (username.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Enter your username first', style: GlassLiquidTheme.bodyMedium),
+          backgroundColor: GlassLiquidTheme.accentOrange,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final err = await CloudApiService().requestPasswordReset(username: username);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          err ??
+              'Reset request sent. The administrator will reset your password using the mobile control app.',
+          style: GlassLiquidTheme.bodyMedium,
+        ),
+        backgroundColor: err == null ? GlassLiquidTheme.accentGreen : GlassLiquidTheme.accentRed,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(GlassLiquidTheme.radiusMedium),
         ),
       ),
     );
@@ -474,30 +544,140 @@ class _GlassLoginScreenState extends State<GlassLoginScreen>
 
     final username = _usernameController.text.trim();
     final password = _passwordController.text.trim();
-    final isValid = await AuthService().validateLogin(username: username, password: password);
-    if (isValid) {
-      await _completeLoginSuccess(username);
-    } else {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+    final cloud = CloudApiService();
+    final online = await cloud.isServerReachable();
 
-        HapticFeedback.heavyImpact();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Invalid username or password',
-              style: GlassLiquidTheme.bodyMedium,
-            ),
-            backgroundColor: GlassLiquidTheme.accentRed,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(GlassLiquidTheme.radiusMedium),
-            ),
-          ),
+    try {
+      var authCheck = await AuthService().checkLogin(username: username, password: password);
+
+      // Online: cloud may have newer credentials (admin password reset, new machine).
+      if (!authCheck.ok && online) {
+        final cloudLogin = await cloud.login(username: username, password: password);
+        if (cloudLogin.ok) {
+          await AuthService().upsertLocalPassword(username: username, password: password);
+          authCheck = AuthCheckResult.success;
+        } else if (cloudLogin.code == 'machine_not_bound' && mounted) {
+          final link = await _confirmLinkDevice();
+          if (link == true) {
+            setState(() => _isLoading = true);
+            final bind = await cloud.bindThisMachine(
+              username: username,
+              password: password,
+            );
+            if (!bind.ok) {
+              await _showLoginError(bind.error ?? 'Could not link this device');
+              return;
+            }
+            await AuthService().upsertLocalPassword(username: username, password: password);
+            await AuthService().bindUserToThisMachine(username);
+            try {
+              await _completeLoginSuccess(username, freshMachineBind: true);
+            } on _LoginFlowException catch (retry) {
+              await _showLoginError(retry.error ?? 'Login failed');
+            }
+            return;
+          }
+          await _showLoginError(cloudLogin.error ?? 'This device is not linked to your account');
+          return;
+        } else {
+          await _showLoginError(
+            cloudLogin.error ?? 'Invalid username or password',
+          );
+          return;
+        }
+      }
+
+      if (!authCheck.ok) {
+        await _showLoginError(
+          online
+              ? (authCheck.error ?? 'Invalid username or password')
+              : '${authCheck.error ?? 'Invalid username or password'}. '
+                  'If your password was reset, connect to the internet and sign in again.',
         );
+        return;
+      }
+
+      await _completeLoginSuccess(username, skipCloudLogin: !online);
+    } on _LoginFlowException catch (e) {
+      if (e.code == 'machine_not_bound' && mounted && online) {
+        final link = await _confirmLinkDevice();
+        if (link == true) {
+          setState(() => _isLoading = true);
+          final bind = await cloud.bindThisMachine(
+            username: username,
+            password: password,
+          );
+          if (!bind.ok) {
+            await _showLoginError(bind.error ?? 'Could not link this device');
+            return;
+          }
+          await AuthService().upsertLocalPassword(username: username, password: password);
+          await AuthService().bindUserToThisMachine(username);
+          try {
+            await _completeLoginSuccess(username, freshMachineBind: true);
+          } on _LoginFlowException catch (retry) {
+            await _showLoginError(retry.error ?? 'Login failed');
+          }
+          return;
+        }
+        await _showLoginError(e.error ?? 'This device is not linked to your account');
+        return;
+      }
+      await _showLoginError(
+        e.code == 'wrong_machine'
+            ? (e.error ?? 'Invalid user for this machine')
+            : e.code == 'banned'
+                ? (e.error ?? 'You are temporarily banned.')
+                : (e.error ?? 'Login failed'),
+      );
+    } catch (e) {
+      await _showLoginError('Login failed');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
       }
     }
   }
+
+  Future<bool?> _confirmLinkDevice() async {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Link this device?'),
+        content: const Text(
+          'This account is not linked to this computer yet. '
+          'Link it now so only you can sign in on this machine. '
+          'Your invoices will download from the cloud. '
+          'You can still use web access from anywhere.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Link device')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showLoginError(String message) async {
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    _navigatedToHome = false;
+    HapticFeedback.heavyImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: GlassLiquidTheme.bodyMedium),
+        backgroundColor: GlassLiquidTheme.accentRed,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(GlassLiquidTheme.radiusMedium),
+        ),
+      ),
+    );
+  }
+}
+
+class _LoginFlowException implements Exception {
+  final String error;
+  final String? code;
+  const _LoginFlowException(this.error, {this.code});
 }

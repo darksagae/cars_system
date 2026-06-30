@@ -26,7 +26,9 @@ android {
         applicationId = "com.example.nsb_motors_mobile"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // OPPO A57 and similar devices run Android 6.0 (API 23).
+        // Note: `flutter run` still requires API 24+; use adb install for API 23 phones.
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

@@ -89,7 +89,7 @@ class DatabaseHelper {
       final db = await databaseFactory.openDatabase(
         dbPath,
         options: OpenDatabaseOptions(
-          version: 10,
+          version: 12,
           onCreate: _onCreate,
           onUpgrade: _onUpgrade,
           onOpen: _onDatabaseOpen,
@@ -993,6 +993,28 @@ class DatabaseHelper {
         print('Column isFinalized might already exist: $e');
       }
     }
+
+    if (oldVersion < 11) {
+      try {
+        await db.execute(
+          'ALTER TABLE invoices ADD COLUMN localPdfPath TEXT',
+        );
+        print('✅ Added localPdfPath column to invoices (v11)');
+      } catch (e) {
+        print('Column localPdfPath might already exist: $e');
+      }
+    }
+
+    if (oldVersion < 12) {
+      try {
+        await db.execute(
+          'ALTER TABLE invoices ADD COLUMN dutyFree INTEGER NOT NULL DEFAULT 0',
+        );
+        print('✅ Added dutyFree column to invoices (v12)');
+      } catch (e) {
+        print('Column dutyFree might already exist: $e');
+      }
+    }
   }
 
   // Close database
@@ -1004,14 +1026,22 @@ class DatabaseHelper {
     }
   }
 
-  // Clear all data (for testing)
-  Future<void> clearAllData() async {
+  // Clear all sales data (admin remote wipe or testing)
+  Future<void> clearAllSalesData() async {
     final db = await database;
+    await db.delete('payment_reminders');
+    await db.delete('demand_letters');
     await db.delete('payments');
     await db.delete('invoice_items');
     await db.delete('invoices');
+    await db.delete('vehicles');
     await db.delete('products');
     await db.delete('customers');
+  }
+
+  // Clear all data (for testing)
+  Future<void> clearAllData() async {
+    await clearAllSalesData();
   }
 
   // Force database recreation (for testing)

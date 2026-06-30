@@ -15,6 +15,8 @@ import '../models/payment.dart';
 import '../widgets/glass_liquid_theme.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/glass_dashboard_cards.dart';
+import '../services/cloud_api_service.dart';
+import '../services/cloud_sync_notifier.dart';
 import 'customer_form_screen.dart';
 import 'invoice_form_screen.dart';
 import 'vehicles/vehicle_form_screen.dart';
@@ -65,6 +67,7 @@ class _GlassDashboardScreenState extends State<GlassDashboardScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    CloudSyncNotifier.instance.addListener(_onCloudInvoicesSynced);
     
     _headerAnimationController = AnimationController(
       duration: const Duration(milliseconds: 800),
@@ -93,6 +96,7 @@ class _GlassDashboardScreenState extends State<GlassDashboardScreen>
     ));
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      CloudApiService().ensureCloudConnectionActive();
       _loadData();
       _headerAnimationController.forward();
       Future.delayed(const Duration(milliseconds: 200), () {
@@ -104,6 +108,7 @@ class _GlassDashboardScreenState extends State<GlassDashboardScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    CloudSyncNotifier.instance.removeListener(_onCloudInvoicesSynced);
     _headerAnimationController.dispose();
     _cardsAnimationController.dispose();
     super.dispose();
@@ -120,6 +125,11 @@ class _GlassDashboardScreenState extends State<GlassDashboardScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _loadData();
+  }
+
+  void _onCloudInvoicesSynced() {
+    if (!mounted) return;
+    Provider.of<InvoiceProvider>(context, listen: false).loadInvoices();
   }
 
   void _loadData() {

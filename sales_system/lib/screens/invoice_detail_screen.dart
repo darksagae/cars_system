@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'dart:io';
-import 'package:path_provider/path_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/glass_liquid_theme.dart';
 import '../models/invoice.dart';
@@ -17,6 +16,7 @@ import '../providers/theme_provider.dart';
 import 'package:provider/provider.dart';
 import '../providers/invoice_provider.dart';
 import '../services/invoice_service.dart';
+import '../services/invoice_pdf_sync.dart';
 import 'invoice_form_screen.dart';
 
 class InvoiceDetailScreen extends StatefulWidget {
@@ -978,12 +978,8 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
 
       // Use Supabase queue system (works from anywhere - no WiFi required)
       try {
-        // Generate PDF for attachment
-        final pdfService = PDFService();
-        final pdfBytes = await pdfService.generateInvoicePDF(invoice);
-        final tempDir = await getTemporaryDirectory();
-        final pdfFile = File('${tempDir.path}/${invoice.invoiceNumber}.pdf');
-        await pdfFile.writeAsBytes(pdfBytes);
+        var pdfPath = await InvoicePdfSync.resolveCanonicalPath(invoice);
+        pdfPath ??= await InvoicePdfSync.saveAndRecord(invoice);
 
         // Send via queue service (automatic - mobile app processes it)
         final autoService = WhatsAppAutoService();
@@ -993,9 +989,13 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         invoiceDate: UgandaFormatters.formatDate(invoice.invoiceDate),
         totalAmount: invoice.totalAmount,
         customerName: invoice.customer!.name,
-          pdfPath: pdfFile.path,
+          pdfPath: pdfPath,
           messageType: 'invoice',
       );
+
+      if (success) {
+        await InvoicePdfSync.uploadForInvoice(invoice, path: pdfPath);
+      }
 
       // Close processing dialog
       if (context.mounted) {
@@ -1050,29 +1050,40 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     if (_isGeneratingPDF) return;
     setState(() => _isGeneratingPDF = true);
     try {
-      final pdfService = PDFService();
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Generating PDF...'),
+            content: Text('Uploading PDF to cloud...'),
             backgroundColor: Colors.blue,
           ),
         );
       }
 
-      final filePath = await pdfService.savePDFToFile(invoice);
+      var filePath = await InvoicePdfSync.resolveCanonicalPath(invoice);
+      final usedExisting = filePath != null;
+      filePath ??= await InvoicePdfSync.saveAndRecord(invoice);
+
+      final uploadError = await InvoicePdfSync.uploadForInvoice(
+        invoice,
+        path: filePath,
+      );
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('PDF saved to: $filePath'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
+            content: Text(
+              uploadError == null
+                  ? usedExisting
+                      ? 'Uploaded existing PDF from Downloads:\n$filePath'
+                      : 'PDF saved and uploaded to cloud:\n$filePath'
+                  : 'Cloud upload failed:\n$uploadError',
+            ),
+            backgroundColor: uploadError == null ? Colors.green : Colors.red,
+            duration: const Duration(seconds: 6),
           ),
         );
       }
-      await _markInvoiceFinalizedIfNeeded();
+      if (uploadError == null) await _markInvoiceFinalizedIfNeeded();
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1146,9 +1157,8 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         ),
       );
 
-      // Generate PDF automatically
-      final pdfService = PDFService();
-      final pdfBytes = await pdfService.generateInvoicePDF(invoice);
+      // Attach the same PDF file used locally (Downloads), not a separate regeneration
+      final pdfBytes = await InvoicePdfSync.readCanonicalBytes(invoice);
 
       // Send email with PDF attachment
       final success = await emailService.sendInvoiceEmail(
@@ -1158,8 +1168,12 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         invoiceDate: UgandaFormatters.formatDate(invoice.invoiceDate),
         totalAmount: invoice.totalAmount,
         companyName: 'NSB Motors Ug',
-        pdfBytes: pdfBytes, // Automatically attach PDF
+        pdfBytes: pdfBytes,
       );
+
+      if (success) {
+        await InvoicePdfSync.uploadForInvoice(invoice);
+      }
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'auth_service.dart';
+import 'cloud_api_service.dart';
 import '../screens/glass_login_screen.dart';
 
 /// Tracks user activity while logged in and locks the app after [idleLimit] of inactivity.
@@ -68,6 +69,7 @@ class SessionTimeoutService {
 
   Future<void> _lockOut() async {
     stopSession();
+    await CloudApiService().logoutCloud();
     await AuthService().clearCurrentUser();
     final nav = navigatorKey.currentState;
     if (nav == null) return;

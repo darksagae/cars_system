@@ -21,6 +21,7 @@ import 'services/heartbeat_service.dart';
 import 'services/whatsapp_service_manager.dart';
 import 'services/session_timeout_service.dart';
 import 'services/machine_relay_service.dart';
+import 'widgets/machine_lock_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -170,8 +171,10 @@ class _SalesSystemAppState extends State<SalesSystemApp> with WidgetsBindingObse
           // Pointer + keyboard bump idle timer; DesktopFrame for custom title bar on Windows
           return DesktopFrame(
             title: 'NSB Motors Ug',
-            child: SessionActivityWrapper(
-              child: child ?? const SizedBox.shrink(),
+            child: MachineLockOverlay(
+              child: SessionActivityWrapper(
+                child: child ?? const SizedBox.shrink(),
+              ),
             ),
           );
         },

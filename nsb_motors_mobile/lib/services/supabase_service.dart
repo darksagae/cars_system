@@ -45,6 +45,12 @@ class SupabaseService {
   }
 
   static Future<Connection> _connect() async {
+    if (!PostgresConfig.isConfigured) {
+      throw StateError(
+        'Postgres is not configured. Set POSTGRES_PRISMA_URL (Vercel Neon) or '
+        'POSTGRES_HOST / POSTGRES_USER / POSTGRES_PASSWORD.',
+      );
+    }
     return await Connection.open(
       Endpoint(
         host: PostgresConfig.host,

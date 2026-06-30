@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:flutter_pdfview/flutter_pdfview.dart';
+import '../utils/pdf_viewer_support.dart';
 import 'dart:io';
 import '../services/local_database_service.dart';
 import '../services/invoice_sync_service.dart';
 import '../services/supabase_service.dart';
+import '../theme/leon_theme.dart';
 
 class InvoicesScreen extends StatefulWidget {
   const InvoicesScreen({Key? key}) : super(key: key);
@@ -24,7 +25,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   String _searchQuery = '';
   String _selectedStatus = 'all';
 
-  static const _primary = Color(0xFF1D4ED8);
+  static const _primary = LeonColors.accent;
   static const _textPrimary = Color(0xFF0F172A);
   static const _textSecondary = Color(0xFF64748B);
   static const _bgColor = Color(0xFFF8FAFC);
@@ -493,14 +494,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       );
       return;
     }
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => _PdfViewerSheet(pdfPath: pdfPath),
-    );
+    viewLocalPdf(context, title: 'Invoice PDF', filePath: pdfPath);
   }
 
   Future<void> _resendWhatsApp(Map<String, dynamic> invoice) async {
@@ -635,7 +629,7 @@ NSB Motors Team''';
   String _emailBody(
       String customerName, String invoiceNumber, String invoiceDate, double totalAmount) {
     return '''<!DOCTYPE html><html><body style="font-family:Arial;color:#333">
-<div style="background:#1E40AF;color:white;padding:20px;text-align:center">
+<div style="background:#1e293b;color:white;padding:20px;text-align:center">
   <h1>NSB Motors</h1><h2>Invoice $invoiceNumber</h2>
 </div>
 <div style="padding:20px">
@@ -676,7 +670,7 @@ class _InvoiceDetailSheet extends StatelessWidget {
     required this.onDelete,
   });
 
-  static const _primary = Color(0xFF1D4ED8);
+  static const _primary = LeonColors.accent;
   static const _textPrimary = Color(0xFF0F172A);
   static const _textSecondary = Color(0xFF64748B);
 
@@ -909,92 +903,6 @@ class _InvoiceDetailSheet extends StatelessWidget {
           Expanded(
             child: Text(value,
                 style: GoogleFonts.plusJakartaSans(fontSize: 13, color: _textPrimary)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// PDF viewer sheet
-// ────────────────────────────────────────────────────────────────────────────
-
-class _PdfViewerSheet extends StatefulWidget {
-  final String pdfPath;
-  const _PdfViewerSheet({Key? key, required this.pdfPath}) : super(key: key);
-
-  @override
-  State<_PdfViewerSheet> createState() => _PdfViewerSheetState();
-}
-
-class _PdfViewerSheetState extends State<_PdfViewerSheet> {
-  int _currentPage = 0;
-  int _totalPages = 0;
-  bool _isLoading = true;
-  bool _error = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Invoice PDF',
-                        style: GoogleFonts.plusJakartaSans(
-                            fontSize: 18, fontWeight: FontWeight.w700)),
-                    if (_totalPages > 0)
-                      Text('Page ${_currentPage + 1} of $_totalPages',
-                          style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13, color: const Color(0xFF6B7280))),
-                  ],
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close_rounded),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: _error
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.error_outline_rounded,
-                            size: 48, color: Color(0xFFDC2626)),
-                        const SizedBox(height: 12),
-                        Text('Error loading PDF',
-                            style: GoogleFonts.plusJakartaSans(fontSize: 15)),
-                      ],
-                    ),
-                  )
-                : _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : PDFView(
-                        filePath: widget.pdfPath,
-                        enableSwipe: true,
-                        onRender: (_pages) => setState(() {
-                          _totalPages = _pages ?? 0;
-                          _isLoading = false;
-                        }),
-                        onError: (_) => setState(() {
-                          _error = true;
-                          _isLoading = false;
-                        }),
-                        onPageChanged: (page, _) =>
-                            setState(() => _currentPage = page ?? 0),
-                      ),
           ),
         ],
       ),

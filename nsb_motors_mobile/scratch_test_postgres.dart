@@ -2,6 +2,10 @@ import 'package:postgres/postgres.dart';
 import 'lib/config/postgres_config.dart';
 
 void main() async {
+  if (!PostgresConfig.isConfigured) {
+    print('Postgres not configured. Set POSTGRES_PRISMA_URL or POSTGRES_HOST/USER/PASSWORD.');
+    return;
+  }
   final conn = await Connection.open(
     Endpoint(
       host: PostgresConfig.host,

@@ -561,6 +561,7 @@ class PDFService {
     final invoiceDate = DateFormat('dd MMM yyyy').format(invoice.invoiceDate);
     final dueDate = DateFormat('dd MMM yyyy').format(invoice.dueDate);
     final includePhase2 = _isPhaseTwoIncluded(invoice, parsed);
+    final dutyFree = _isDutyFree(invoice, parsed);
     final phase1 = _calculateFirstInstallmentTotal(parsed, invoice);
     final phase2 = _calculateSecondInstallmentTotal(parsed, invoice);
     final grandTotal = phase1 + phase2;
@@ -571,8 +572,9 @@ class PDFService {
     final insurance =
         invoice.thirdPartyInsurance != 0.0 ? invoice.thirdPartyInsurance : (parsed.insurance ?? 0.0);
     final agent = invoice.agencyFees != 0.0 ? invoice.agencyFees : (parsed.agent ?? 0.0);
-    // When invoice.taxesURA == 0 the user chose "Include tax to URA" = false; do not use parsed.
-    final taxesUra = invoice.taxesURA == 0.0 ? 0.0 : (invoice.taxesURA != 0.0 ? invoice.taxesURA : (parsed.taxesUra ?? 0.0));
+    final taxesUra = dutyFree
+        ? (invoice.taxesURA != 0.0 ? invoice.taxesURA : (parsed.taxesUra ?? 0.0))
+        : (invoice.taxesURA == 0.0 ? 0.0 : (invoice.taxesURA != 0.0 ? invoice.taxesURA : (parsed.taxesUra ?? 0.0)));
 
     pw.Widget boxedValue(String label, String value, {bool emphasize = false}) {
       return pw.Container(
@@ -686,7 +688,7 @@ class PDFService {
             boxedValue('Phase 1 Total (UGX)', _formatMoneyWithDecimals(phase1), emphasize: true),
           ]),
           sectionCard('Phase 2 (Settlement)', [
-            if (taxesUra > 0) boxedValue('Taxes Payable to URA', _formatMoneyWithDecimals(taxesUra)),
+            if (taxesUra > 0) boxedValue(_taxesPayableLabel(invoice, parsed), _formatMoneyWithDecimals(taxesUra)),
             // Only show Number Plates, Insurance, and Agent Fees when Phase 2 is included
             if (includePhase2) ...[
               boxedValue('Number Plates', _formatMoneyWithDecimals(plates)),
@@ -708,6 +710,8 @@ class PDFService {
     String salesPersonName,
   ) {
     final includePhase2 = _isPhaseTwoIncluded(invoice, parsed);
+    final dutyFree = _isDutyFree(invoice, parsed);
+    final taxesLabel = _taxesSummaryLabel(invoice, parsed);
     final phase1 = _calculateFirstInstallmentTotal(parsed, invoice);
     final phase2 = _calculateSecondInstallmentTotal(parsed, invoice);
     final grandTotal = phase1 + phase2;
@@ -730,9 +734,8 @@ class PDFService {
         ttUsd;
 
     // Get base values from invoice or parsed notes.
-    // When invoice.taxesURA == 0 the user chose "Include tax to URA" = false; do not override with parsed or derived.
     var taxesUra = invoice.taxesURA != 0.0 ? invoice.taxesURA : (parsed.taxesUra ?? 0.0);
-    if (invoice.taxesURA == 0.0) taxesUra = 0.0;
+    if (!dutyFree && invoice.taxesURA == 0.0) taxesUra = 0.0;
     final plates = invoice.numberPlatesFee != 0.0 ? invoice.numberPlatesFee : (parsed.plates ?? 0.0);
     final insurance = invoice.thirdPartyInsurance != 0.0 ? invoice.thirdPartyInsurance : (parsed.insurance ?? 0.0);
     final agent = invoice.agencyFees != 0.0 ? invoice.agencyFees : (parsed.agent ?? 0.0);
@@ -747,28 +750,28 @@ class PDFService {
     // Always calculate derived values when CV is available (regardless of includePhase2)
     // These will be used as fallbacks if parsed values are missing or zero
     final derivedImportDuty = cv > 0 ? (cv * 0.25) : 0.0;
-    final importDuty = (parsed.importDuty != null && parsed.importDuty! > 0) 
-        ? parsed.importDuty! 
+    var importDuty = (parsed.importDuty != null && parsed.importDuty! > 0)
+        ? parsed.importDuty!
         : derivedImportDuty;
 
     final derivedVat = cv > 0 ? ((cv + importDuty) * 0.18) : 0.0;
-    final vat = (parsed.vat != null && parsed.vat! > 0) 
-        ? parsed.vat! 
+    var vat = (parsed.vat != null && parsed.vat! > 0)
+        ? parsed.vat!
         : derivedVat;
 
     final derivedWht = cv > 0 ? ((cv + importDuty) * 0.06) : 0.0;
-    final wht = (parsed.wht != null && parsed.wht! > 0) 
-        ? parsed.wht! 
+    var wht = (parsed.wht != null && parsed.wht! > 0)
+        ? parsed.wht!
         : derivedWht;
 
     final derivedInfra = cv > 0 ? (cv * 0.015) : 0.0;
-    final infra = (parsed.infra != null && parsed.infra! > 0) 
-        ? parsed.infra! 
+    var infra = (parsed.infra != null && parsed.infra! > 0)
+        ? parsed.infra!
         : derivedInfra;
 
     final derivedIdf = cv > 0 ? (cv * 0.01) : 0.0;
-    final idf = (parsed.idf != null && parsed.idf! > 0) 
-        ? parsed.idf! 
+    var idf = (parsed.idf != null && parsed.idf! > 0)
+        ? parsed.idf!
         : derivedIdf;
 
     // Registration Fee, Stamp Duty, and Reg Form have fixed defaults
@@ -786,27 +789,29 @@ class PDFService {
 
     // Calculate environmental levy: try parsed first, then residual from taxesUra, then derived
     double env = 0.0;
-    if (parsed.envLevy != null && parsed.envLevy! > 0) {
-      env = parsed.envLevy!;
-    } else if (taxesUra > 0) {
-      // Calculate residual: taxesUra - (all other taxes)
-      final calculatedOtherTaxes = importDuty + vat + wht + infra + idf + excise + regFee + stamp + regForm;
-      final envFromResidual = taxesUra - calculatedOtherTaxes;
-      if (envFromResidual > 0) {
-        env = envFromResidual;
+    if (!dutyFree) {
+      if (parsed.envLevy != null && parsed.envLevy! > 0) {
+        env = parsed.envLevy!;
+      } else if (taxesUra > 0) {
+        final calculatedOtherTaxes = importDuty + vat + wht + infra + idf + excise + regFee + stamp + regForm;
+        final envFromResidual = taxesUra - calculatedOtherTaxes;
+        if (envFromResidual > 0) {
+          env = envFromResidual;
+        } else if (cv > 0) {
+          env = cv * 0.50;
+        }
       } else if (cv > 0) {
-        // Fallback: calculate based on vehicle age (simplified: 50% of CV for old vehicles)
-        // This is a rough estimate - actual calculation depends on vehicle year
-        env = cv * 0.50; // Default environmental levy rate
+        env = cv * 0.50;
       }
-    } else if (cv > 0) {
-      // If taxesUra is 0 but CV is available, use default rate
-      env = cv * 0.50;
     }
 
-    // Taxes to URA: only recalculate from components when invoice did not explicitly exclude (invoice.taxesURA != 0).
-    // When invoice.taxesURA == 0, user unticked "Include tax to URA" — keep 0 and do not show derived taxes.
-    if (invoice.taxesURA != 0.0 && taxesUra == 0.0) {
+    // Taxes to URA / Duty fees: only recalculate from components when invoice did not explicitly exclude.
+    if (dutyFree) {
+      importDuty = vat = wht = env = infra = idf = 0.0;
+      taxesUra = invoice.taxesURA != 0.0
+          ? invoice.taxesURA
+          : (regFee + stamp + regForm);
+    } else if (invoice.taxesURA != 0.0 && taxesUra == 0.0) {
       final calculatedTaxesUra = importDuty + vat + wht + env + infra + idf + excise + regFee + stamp + regForm;
       if (calculatedTaxesUra > 0) {
         taxesUra = calculatedTaxesUra;
@@ -1462,6 +1467,7 @@ class PDFService {
                           mainAxisAlignment: pw.MainAxisAlignment.end,
                           children: [
                             if (taxesUra > 0) ...[
+                              if (!dutyFree) ...[
                               summaryRow('CV', _formatMoneyWithDecimals(cv)),
                               summaryRow('Import Duty', _formatMoneyWithDecimals(importDuty)),
                               summaryRow('VAT', _formatMoneyWithDecimals(vat)),
@@ -1469,10 +1475,11 @@ class PDFService {
                               summaryRow('Environmental Levy', _formatMoneyWithDecimals(env)),
                               summaryRow('Infrastructure Levy', _formatMoneyWithDecimals(infra)),
                               summaryRow('IDF', _formatMoneyWithDecimals(idf)),
+                              ],
                               summaryRow('Registration Fee', _formatMoneyWithDecimals(regFee)),
                               summaryRow('Stamp Duty', _formatMoneyWithDecimals(stamp)),
                               summaryRow('Reg Form', _formatMoneyWithDecimals(regForm)),
-                              summaryRow('Taxes to URA', _formatMoneyWithDecimals(taxesUra)),
+                              summaryRow(taxesLabel, _formatMoneyWithDecimals(taxesUra)),
                             ],
                             // Only show Number Plates, Insurance, and Agent Fees when Phase 2 is included
                             if (includePhase2) ...[
@@ -1518,6 +1525,8 @@ class PDFService {
     String salesPersonName,
   ) {
     final includePhase2 = _isPhaseTwoIncluded(invoice, parsed);
+    final dutyFree = _isDutyFree(invoice, parsed);
+    final taxesLabel = _taxesSummaryLabel(invoice, parsed);
     
     // Calculate Phase 1 breakdown values (EXACT same as Classic Grid)
     final phase1Rate = parsed.phase1Rate ?? invoice.exchangeRate;
@@ -1577,9 +1586,12 @@ class PDFService {
       }
     }
 
-    // When invoice.taxesURA == 0 the user chose "Include tax to URA" = false; do not override with derived.
+    // When invoice.taxesURA == 0 the user chose "Include tax to URA" = false; duty-free still has fees.
     double taxesUra = invoice.taxesURA != 0.0 ? invoice.taxesURA : (parsed.taxesUra ?? 0.0);
-    if (invoice.taxesURA == 0.0) {
+    if (dutyFree) {
+      if (taxesUra <= 0) taxesUra = regFee + stamp + regForm;
+      importDuty = vat = wht = envLevy = infra = idf = 0.0;
+    } else if (invoice.taxesURA == 0.0) {
       taxesUra = 0.0;
     } else if (taxesUra <= 0 && cv > 0) {
       taxesUra = importDuty + vat + wht + envLevy + infra + idf + regFee + stamp + regForm;
@@ -2279,7 +2291,7 @@ class PDFService {
                     child: pw.Column(
                       mainAxisAlignment: pw.MainAxisAlignment.end,
                       children: [
-                        if (taxesUra > 0) summaryRow('Taxes to URA', _formatMoneyWithDecimals(taxesUra)),
+                        if (taxesUra > 0) summaryRow(taxesLabel, _formatMoneyWithDecimals(taxesUra)),
                         // Only show Number Plates, Insurance, and Agent Fees when Phase 2 is included
                         if (includePhase2) ...[
                           summaryRow('Number Plates', _formatMoneyWithDecimals(numberPlates)),
@@ -3089,7 +3101,7 @@ class PDFService {
         ),
         pw.SizedBox(height: 10),
         if (invoice.taxesURA > 0)
-          _buildSecondInstallmentRow('Taxes Payable to URA', _formatMoneyWithDecimals(invoice.taxesURA != 0.0 ? invoice.taxesURA : (parsed.taxesUra ?? 0.0))),
+          _buildSecondInstallmentRow(_taxesPayableLabel(invoice, parsed), _formatMoneyWithDecimals(invoice.taxesURA != 0.0 ? invoice.taxesURA : (parsed.taxesUra ?? 0.0))),
         _buildSecondInstallmentRow('Number plates', _formatMoney(invoice.numberPlatesFee != 0.0 ? invoice.numberPlatesFee : (parsed.plates ?? 0.0))),
         _buildSecondInstallmentRow('3rd Party Insurance', ((invoice.thirdPartyInsurance != 0.0 ? invoice.thirdPartyInsurance : (parsed.insurance ?? 0.0)) > 0) ? _formatMoney(invoice.thirdPartyInsurance != 0.0 ? invoice.thirdPartyInsurance : (parsed.insurance ?? 0.0)) : ''),
         _buildSecondInstallmentRow('Agent fees', _formatMoney(invoice.agencyFees != 0.0 ? invoice.agencyFees : (parsed.agent ?? 0.0))),
@@ -3469,6 +3481,20 @@ class PDFService {
   }
 
   // Parse invoice notes for additional details used as fallbacks
+  bool _isDutyFree(Invoice invoice, _ParsedInvoiceNotes parsed) {
+    if (invoice.dutyFree) return true;
+    if (parsed.dutyFree == true) return true;
+    return invoice.notes.toLowerCase().contains('duty free: yes');
+  }
+
+  String _taxesSummaryLabel(Invoice invoice, _ParsedInvoiceNotes parsed) {
+    return _isDutyFree(invoice, parsed) ? 'Duty fees' : 'Taxes to URA';
+  }
+
+  String _taxesPayableLabel(Invoice invoice, _ParsedInvoiceNotes parsed) {
+    return _isDutyFree(invoice, parsed) ? 'Duty fees' : 'Taxes Payable to URA';
+  }
+
   _ParsedInvoiceNotes _parseInvoiceNotes(String notes) {
     final parsed = _ParsedInvoiceNotes();
     if (notes.isEmpty) return parsed;
@@ -3523,6 +3549,8 @@ class PDFService {
         parsed.phase1Rate = _tryParseMoney(line.substring(13));
       } else if (line.startsWith('Phase 2 Included:')) {
         parsed.includePhase2 = line.substring(17).trim().toLowerCase() == 'yes';
+      } else if (line.startsWith('Duty Free:')) {
+        parsed.dutyFree = line.substring(10).trim().toLowerCase() == 'yes';
       } else if (line.startsWith('URA Taxes:')) {
         parsed.taxesUra = _tryParseMoney(line.substring(10));
       } else if (line.startsWith('Number Plates:')) {
@@ -4464,7 +4492,7 @@ class PDFService {
                 children: [
                   pw.Padding(
                     padding: pw.EdgeInsets.all(4),
-                    child: pw.Text('Taxes Payable to URA', style: pw.TextStyle(fontSize: 10)),
+                    child: pw.Text(_taxesPayableLabel(invoice, parsed), style: pw.TextStyle(fontSize: 10)),
                   ),
                   pw.Padding(
                     padding: pw.EdgeInsets.all(4),
@@ -4849,6 +4877,7 @@ class _ParsedInvoiceNotes {
 
   // Phase 2
   bool? includePhase2;
+  bool? dutyFree;
   double? taxesUra;
   double? plates;
   double? insurance;

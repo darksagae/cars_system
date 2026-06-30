@@ -1,59 +1,79 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
-import '../providers/app_provider.dart';
-import 'dashboard_screen.dart';
-import 'machines_screen.dart';
-import 'invoices_screen.dart';
-import 'database_management_screen.dart';
-import 'settings_screen.dart';
+import '../services/cloud_control_service.dart';
+import '../services/mobile_session_timeout_service.dart';
+import '../theme/leon_theme.dart';
+import 'accounts_screen.dart';
+import 'control_settings_screen.dart';
+import 'home_tab_screen.dart';
+import 'login_screen.dart';
+import 'updates_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _selectedIndex = 0;
-
-  static const List<Widget> _screens = [
-    DashboardScreen(),
-    MachinesScreen(),
-    InvoicesScreen(),
-    DatabaseManagementScreen(),
-    SettingsScreen(),
-  ];
-
-  static const _navItems = [
-    _NavItem(icon: Icons.grid_view_rounded, label: 'Home'),
-    _NavItem(icon: Icons.computer_rounded, label: 'Machines'),
-    _NavItem(icon: Icons.receipt_long_rounded, label: 'Invoices'),
-    _NavItem(icon: Icons.storage_rounded, label: 'Database'),
-    _NavItem(icon: Icons.tune_rounded, label: 'Settings'),
-  ];
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AppProvider>().initialize();
-    });
+    WidgetsBinding.instance.addObserver(this);
+    MobileSessionTimeoutService.instance.start(_logout);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    MobileSessionTimeoutService.instance.stop();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      MobileSessionTimeoutService.instance.checkIdleOnResume();
+    }
+  }
+
+  void _logout() async {
+    MobileSessionTimeoutService.instance.stop();
+    await CloudControlService().clearSession();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _screens,
+    final screens = [
+      HomeTabScreen(onGoToAccounts: () => setState(() => _selectedIndex = 1)),
+      const AccountsScreen(),
+      const UpdatesScreen(),
+      ControlSettingsScreen(onLogout: _logout),
+    ];
+
+    const navItems = [
+      _NavItem(icon: Icons.home_rounded, label: 'Home'),
+      _NavItem(icon: Icons.people_rounded, label: 'Accounts'),
+      _NavItem(icon: Icons.system_update_alt_rounded, label: 'Updates'),
+      _NavItem(icon: Icons.tune_rounded, label: 'Settings'),
+    ];
+
+    return SessionActivityWrapper(
+      child: Scaffold(
+        body: IndexedStack(index: _selectedIndex, children: screens),
+        bottomNavigationBar: _buildFloatingNav(navItems),
       ),
-      bottomNavigationBar: _buildFloatingNav(),
     );
   }
 
-  Widget _buildFloatingNav() {
+  Widget _buildFloatingNav(List<_NavItem> navItems) {
     return SafeArea(
       top: false,
       child: Padding(
@@ -61,11 +81,11 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Container(
           height: 68,
           decoration: BoxDecoration(
-            color: const Color(0xFF0F172A),
+            color: LeonColors.accentDark,
             borderRadius: BorderRadius.circular(36),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF0F172A).withOpacity(0.35),
+                color: LeonColors.accentDark.withValues(alpha: 0.35),
                 blurRadius: 28,
                 offset: const Offset(0, 10),
               ),
@@ -73,20 +93,21 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: List.generate(_navItems.length, (index) {
-              final item = _navItems[index];
+            children: List.generate(navItems.length, (index) {
+              final item = navItems[index];
               final isSelected = _selectedIndex == index;
               return GestureDetector(
-                onTap: () => setState(() => _selectedIndex = index),
+                onTap: () {
+                  MobileSessionTimeoutService.instance.recordActivity();
+                  setState(() => _selectedIndex = index);
+                },
                 behavior: HitTestBehavior.opaque,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   curve: Curves.easeOutCubic,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                   decoration: BoxDecoration(
-                    color: isSelected
-                        ? Colors.white.withOpacity(0.12)
-                        : Colors.transparent,
+                    color: isSelected ? Colors.white.withValues(alpha: 0.12) : Colors.transparent,
                     borderRadius: BorderRadius.circular(24),
                   ),
                   child: Column(
@@ -95,15 +116,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       Icon(
                         item.icon,
                         size: 22,
-                        color: isSelected
-                            ? Colors.white
-                            : Colors.white.withOpacity(0.4),
+                        color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.4),
                       ),
                       if (isSelected) ...[
                         const SizedBox(height: 3),
                         Text(
                           item.label,
-                          style: GoogleFonts.plusJakartaSans(
+                          style: LeonTypography.mono(
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
                             color: Colors.white,

@@ -12,6 +12,7 @@ import 'invoice_form_screen.dart';
 import 'invoice_detail_screen.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/glass_liquid_theme.dart';
+import '../services/cloud_sync_notifier.dart';
 
 class InvoicesScreen extends StatefulWidget {
   final Customer? customerFilter;
@@ -24,12 +25,25 @@ class InvoicesScreen extends StatefulWidget {
 
 class _InvoicesScreenState extends State<InvoicesScreen> {
   int? _hoveredIndex;
+
   @override
   void initState() {
     super.initState();
+    CloudSyncNotifier.instance.addListener(_onCloudInvoicesSynced);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadInvoices();
     });
+  }
+
+  @override
+  void dispose() {
+    CloudSyncNotifier.instance.removeListener(_onCloudInvoicesSynced);
+    super.dispose();
+  }
+
+  void _onCloudInvoicesSynced() {
+    if (!mounted) return;
+    _loadInvoices();
   }
 
   void _loadInvoices() {

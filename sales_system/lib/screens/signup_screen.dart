@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
+import '../services/cloud_api_service.dart';
 import '../widgets/glass_liquid_theme.dart';
 
 class SignupScreen extends StatefulWidget {
@@ -51,7 +52,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Create your account to access the system',
+                    'Create your account (internet required)',
                     style: GoogleFonts.poppins(
                       fontSize: 14,
                       color: Colors.white.withOpacity(0.7),
@@ -111,14 +112,34 @@ class _SignupScreenState extends State<SignupScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
     try {
-      // Check if this is the first user - if so, make them admin
+      final cloud = CloudApiService();
+      if (!await cloud.isServerReachable()) {
+        throw Exception(
+          'Internet connection is required to register. Connect to the internet and try again.',
+        );
+      }
+
       final hasAnyUser = await _auth.hasAnyUser();
-      final role = hasAnyUser ? 'user' : 'admin'; // First user is admin
-      
-      await _auth.createUser(
-        username: _usernameController.text.trim(),
-        password: _passwordController.text,
+      final role = hasAnyUser ? 'user' : 'admin';
+      final username = _usernameController.text.trim();
+      final password = _passwordController.text;
+
+      final registered = await cloud.register(
+        username: username,
+        password: password,
         role: role,
+        displayName: username,
+      );
+      if (!registered) {
+        throw Exception('This machine is already registered to another account.');
+      }
+
+      final machineId = await _auth.getThisMachineId();
+      await _auth.createUser(
+        username: username,
+        password: password,
+        role: role,
+        machineId: machineId,
       );
       
       if (mounted) {

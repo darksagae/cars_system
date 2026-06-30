@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../services/machine_management_service.dart';
 import '../providers/app_provider.dart';
+import '../theme/leon_theme.dart';
 
 class MachinesScreen extends StatefulWidget {
   const MachinesScreen({Key? key}) : super(key: key);
@@ -23,7 +24,7 @@ class _MachinesScreenState extends State<MachinesScreen> {
   static const _ink = Color(0xFF0F172A);
   static const _secondary = Color(0xFF64748B);
   static const _border = Color(0xFFE2E8F0);
-  static const _accent = Color(0xFF1D4ED8);
+  static const _accent = LeonColors.accent;
 
   @override
   void initState() {
@@ -313,7 +314,7 @@ class _MachinesScreenState extends State<MachinesScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF1D4ED8), Color(0xFF3B82F6)],
+          colors: [LeonColors.accentDark, LeonColors.accent, LeonColors.accentMid],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -523,7 +524,7 @@ class _MachinesScreenState extends State<MachinesScreen> {
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: const Icon(Icons.computer_rounded,
-                    size: 32, color: Color(0xFF1D4ED8)),
+                    size: 32, color: LeonColors.accent),
               ),
               const SizedBox(height: 16),
               Text('No machines connected',
@@ -1182,7 +1183,7 @@ class _MachineControlSheetState extends State<_MachineControlSheet> {
               _ctrlTile(Icons.storage_rounded, const Color(0xFF059669),
                   const Color(0xFFECFDF5), 'Refresh Database',
                   'Force database refresh', () => _send('refresh_database', 'DB Refresh')),
-              _ctrlTile(Icons.currency_exchange_rounded, const Color(0xFF1D4ED8),
+              _ctrlTile(Icons.currency_exchange_rounded, LeonColors.accent,
                   const Color(0xFFEFF6FF), 'Update Exchange Rate',
                   'Set new exchange rate', _showRateDialog),
               _ctrlTile(Icons.cloud_download_rounded, const Color(0xFF7C3AED),
@@ -1495,7 +1496,7 @@ class _ActivitiesSheet extends StatelessWidget {
     switch (status) {
       case 'success': return const Color(0xFF059669);
       case 'failed': case 'error': return const Color(0xFFDC2626);
-      case 'sent': return const Color(0xFF1D4ED8);
+      case 'sent': return LeonColors.accent;
       default: return const Color(0xFF94A3B8);
     }
   }
@@ -1563,7 +1564,7 @@ class _MonitorSheet extends StatelessWidget {
   static const _ink = Color(0xFF0F172A);
   static const _secondary = Color(0xFF64748B);
   static const _border = Color(0xFFE2E8F0);
-  static const _accent = Color(0xFF1D4ED8);
+  static const _accent = LeonColors.accent;
 
   @override
   Widget build(BuildContext context) {

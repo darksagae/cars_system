@@ -164,6 +164,8 @@ class Invoice {
   final List<String> images;
   /// Set true after PDF/email/WhatsApp/print from Invoice Details (record integrity).
   final bool isFinalized;
+  /// Duty-free vehicle: only registration fee, stamp duty, and reg form (no URA import taxes).
+  final bool dutyFree;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -221,6 +223,7 @@ class Invoice {
     this.terms = '',
     this.images = const [],
     this.isFinalized = false,
+    this.dutyFree = false,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : createdAt = createdAt ?? DateTime.now(),
@@ -367,6 +370,7 @@ class Invoice {
       'terms': terms,
       'images': images.join(','),
       'isFinalized': isFinalized ? 1 : 0,
+      'dutyFree': dutyFree ? 1 : 0,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
@@ -437,6 +441,7 @@ class Invoice {
           ? (map['images'] as String).split(',') 
           : [],
       isFinalized: (map['isFinalized'] as int?) == 1,
+      dutyFree: (map['dutyFree'] as int?) == 1,
       createdAt: DateTime.parse(map['createdAt'] as String),
       updatedAt: DateTime.parse(map['updatedAt'] as String),
     );
@@ -489,6 +494,7 @@ class Invoice {
     String? terms,
     List<String>? images,
     bool? isFinalized,
+    bool? dutyFree,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -538,6 +544,7 @@ class Invoice {
       terms: terms ?? this.terms,
       images: images ?? this.images,
       isFinalized: isFinalized ?? this.isFinalized,
+      dutyFree: dutyFree ?? this.dutyFree,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

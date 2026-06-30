@@ -6,6 +6,7 @@ import '../providers/app_provider.dart';
 import 'scan_client_screen.dart';
 import 'client_users_screen.dart';
 import '../services/supabase_service.dart';
+import '../theme/leon_theme.dart';
 
 class ClientsScreen extends StatefulWidget {
   const ClientsScreen({Key? key}) : super(key: key);
@@ -17,7 +18,7 @@ class ClientsScreen extends StatefulWidget {
 class _ClientsScreenState extends State<ClientsScreen> {
   Timer? _refreshTimer;
 
-  static const _primary = Color(0xFF1D4ED8);
+  static const _primary = LeonColors.accent;
   static const _textPrimary = Color(0xFF0F172A);
   static const _textSecondary = Color(0xFF64748B);
   static const _bgColor = Color(0xFFF8FAFC);
@@ -1331,7 +1332,7 @@ class _ClientActivitiesSheetState extends State<_ClientActivitiesSheet> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF1E40AF) : const Color(0xFFF3F4F6),
+          color: isSelected ? LeonColors.accent : const Color(0xFFF3F4F6),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(

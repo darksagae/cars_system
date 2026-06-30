@@ -10,6 +10,8 @@ class WhatsAppMessageTrackingService {
   factory WhatsAppMessageTrackingService() => _instance;
   WhatsAppMessageTrackingService._internal();
 
+  static bool _machineProfilesTableEnsured = false;
+
   // Keys for SharedPreferences
   static const String _userIdKey = 'whatsapp_user_id';
   static const String _userNameKey = 'whatsapp_user_name';

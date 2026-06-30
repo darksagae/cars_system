@@ -52,6 +52,10 @@ windows/flutter/ephemeral/
 *.pdb
 *.dll.pdb
 
+# Local Postgres / WhatsApp env (use Vercel Neon vars)
+whatsapp_service/.env
+
+
 # Additional build outputs
 **/flutter_assets/kernel_blob.bin
 **/app.dill

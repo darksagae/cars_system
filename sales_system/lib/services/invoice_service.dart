@@ -2,6 +2,7 @@ import '../database/database_helper.dart';
 import '../models/invoice.dart';
 import '../models/customer.dart';
 import 'client_activity_service.dart';
+import 'cloud_api_service.dart';
 import 'machine_relay_service.dart';
 import 'pdf/pdf_service.dart';
 import 'package:intl/intl.dart';
@@ -65,23 +66,13 @@ class InvoiceService {
       
       print('Invoice creation completed successfully with ID: $invoiceId');
       
-      // Generate and save PDF for mobile app access
-      String? localPdfPath;
-      try {
-        final pdfService = PDFService();
-        localPdfPath = await pdfService.savePDFToFile(invoice);
-        print('✅ PDF saved to: $localPdfPath');
-      } catch (e) {
-        print('⚠️ Failed to generate/save PDF: $e');
-        // Don't fail invoice creation if PDF generation fails
-      }
-      
-      // Sync invoice to portal relay (web portal visibility)
+      // Sync invoice data to cloud (PDF uploads separately when user generates/sends)
       try {
         final invoiceWithId = invoice.copyWith(id: invoiceId);
         MachineRelayService().syncInvoice(invoiceWithId, operation: 'upsert');
+        await CloudApiService().syncInvoiceToCloud(invoiceWithId);
       } catch (e) {
-        print('⚠️ Failed to sync invoice to relay: $e');
+        print('⚠️ Failed to sync invoice to cloud: $e');
       }
 
       // Log activity to relay portal
@@ -183,7 +174,18 @@ class InvoiceService {
       final invoice = Invoice.fromMap(maps.first);
       if (invoice.id != null) {
         final items = await getInvoiceItems(invoice.id!);
-        return invoice.copyWith(items: items).calculateTotals();
+        Customer? customer;
+        if (invoice.customerId > 0) {
+          final customerMaps = await db.query(
+            'customers',
+            where: 'id = ?',
+            whereArgs: [invoice.customerId],
+          );
+          if (customerMaps.isNotEmpty) {
+            customer = Customer.fromMap(customerMaps.first);
+          }
+        }
+        return invoice.copyWith(items: items, customer: customer).calculateTotals();
       }
     }
     return null;
@@ -305,11 +307,12 @@ class InvoiceService {
       }
     });
     
-    // Sync updated invoice to portal relay
+    // Sync updated invoice data to cloud (PDF uploads when user generates/sends)
     try {
       MachineRelayService().syncInvoice(invoice, operation: 'upsert');
+      await CloudApiService().syncInvoiceToCloud(invoice);
     } catch (e) {
-      print('⚠️ Failed to sync invoice update to relay: $e');
+      print('⚠️ Failed to sync invoice update to cloud: $e');
     }
 
     try {
@@ -347,6 +350,32 @@ class InvoiceService {
       'invoices',
       {
         'status': status.index,
+        'updatedAt': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [invoiceId],
+    );
+  }
+
+  Future<String?> getLocalPdfPath(int invoiceId) async {
+    final db = await _dbHelper.database;
+    final rows = await db.query(
+      'invoices',
+      columns: ['localPdfPath'],
+      where: 'id = ?',
+      whereArgs: [invoiceId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first['localPdfPath'] as String?;
+  }
+
+  Future<void> setLocalPdfPath(int invoiceId, String path) async {
+    final db = await _dbHelper.database;
+    await db.update(
+      'invoices',
+      {
+        'localPdfPath': path,
         'updatedAt': DateTime.now().toIso8601String(),
       },
       where: 'id = ?',
@@ -398,8 +427,9 @@ class InvoiceService {
     if (invoiceNumber != null) {
       try {
         MachineRelayService().deleteInvoiceSync(invoiceNumber);
+        await CloudApiService().deleteInvoiceFromCloud(invoiceNumber);
       } catch (e) {
-        print('⚠️ Failed to sync invoice deletion to relay: $e');
+        print('⚠️ Failed to sync invoice deletion to cloud: $e');
       }
       try {
         MachineRelayService().reportActivity('delete_invoice', details: {

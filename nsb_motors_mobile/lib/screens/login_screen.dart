@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import '../services/supabase_service.dart';
+import '../services/cloud_control_service.dart';
+import '../theme/leon_theme.dart';
+import '../widgets/leon/leon_bezel_card.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({Key? key}) : super(key: key);
+  const LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -11,19 +12,47 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _cloud = CloudControlService();
   bool _isLoading = false;
   bool _obscurePassword = true;
   String? _errorMessage;
 
-  static const _primary = Color(0xFF1E40AF);
-
   @override
   void dispose() {
-    _emailController.dispose();
+    _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleForgotPassword() async {
+    final username = _usernameController.text.trim();
+    if (username.isEmpty) {
+      setState(() => _errorMessage = 'Enter your control panel username first');
+      return;
+    }
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      final err = await _cloud.requestPasswordReset(username: username, source: 'control_panel');
+      if (!mounted) return;
+      if (err != null) {
+        setState(() => _errorMessage = err);
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'A password reset link has been sent to the registered control panel email.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _handleLogin() async {
@@ -35,16 +64,11 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final response = await SupabaseService.signInWithEmail(
-        email: _emailController.text.trim(),
+      await _cloud.login(
+        username: _usernameController.text.trim(),
         password: _passwordController.text,
       );
-
-      if (response.session != null) {
-        if (mounted) Navigator.of(context).pushReplacementNamed('/home');
-      } else {
-        setState(() => _errorMessage = 'Login failed. Please check your credentials.');
-      }
+      if (mounted) Navigator.of(context).pushReplacementNamed('/home');
     } catch (e) {
       setState(() => _errorMessage = e.toString().replaceAll('Exception: ', ''));
     } finally {
@@ -54,84 +78,160 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 720;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: LeonColors.canvas,
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              _buildHeader(),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 28),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (_errorMessage != null) _buildErrorBanner(),
-                      _buildEmailField(),
-                      const SizedBox(height: 16),
-                      _buildPasswordField(),
-                      const SizedBox(height: 28),
-                      _buildLoginButton(),
-                      const SizedBox(height: 20),
-                      _buildFooterText(),
-                      const SizedBox(height: 40),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+        child: wide ? _buildWideLayout() : _buildNarrowLayout(),
       ),
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildWideLayout() {
+    return Row(
+      children: [
+        Expanded(child: _buildHeroImage(fullHeight: true)),
+        Expanded(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: _buildFormCard(),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNarrowLayout() {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          SizedBox(height: MediaQuery.sizeOf(context).height * 0.28, child: _buildHeroImage()),
+          Transform.translate(
+            offset: const Offset(0, -24),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: _buildFormCard(),
+            ),
+          ),
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeroImage({bool fullHeight = false}) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(28, 60, 28, 48),
-      decoration: const BoxDecoration(
-        color: Color(0xFFF0F4FF),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      height: fullHeight ? double.infinity : double.infinity,
+      decoration: const BoxDecoration(color: LeonColors.accentDark),
+      child: Stack(
+        fit: StackFit.expand,
         children: [
+          Image.asset(
+            'assets/login/login.png',
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(
+              decoration: const BoxDecoration(gradient: leonHeroGradient),
+            ),
+          ),
           Container(
-            width: 64,
-            height: 64,
             decoration: BoxDecoration(
-              color: _primary,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Icon(Icons.speed, color: Colors.white, size: 36),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'NSB Motors',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 32,
-              fontWeight: FontWeight.w800,
-              color: const Color(0xFF111827),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.15),
+                  Colors.black.withValues(alpha: 0.45),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            'System Control Center',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 15,
-              color: const Color(0xFF6B7280),
+          if (!fullHeight)
+            Positioned(
+              left: 24,
+              bottom: 36,
+              right: 24,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'NSBMotors Ug',
+                    style: LeonTypography.heading(fontSize: 28, color: Colors.white, fontWeight: FontWeight.w800),
+                  ),
+                  Text(
+                    'Mobile control panel',
+                    style: LeonTypography.sans(fontSize: 14, color: Colors.white70),
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFormCard() {
+    return LeonBezelCard(
+      padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Image.asset(
+                'assets/logo/logo.png',
+                height: 56,
+                fit: BoxFit.contain,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Welcome Back',
+              textAlign: TextAlign.center,
+              style: LeonTypography.heading(fontSize: 24),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Sign in to continue to NSBMotors Ug',
+              textAlign: TextAlign.center,
+              style: LeonTypography.sans(fontSize: 13, color: LeonColors.secondary),
+            ),
+            const SizedBox(height: 24),
+            if (_errorMessage != null) _buildErrorBanner(),
+            _buildUsernameField(),
+            const SizedBox(height: 16),
+            _buildPasswordField(),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _isLoading ? null : _handleForgotPassword,
+                child: Text(
+                  'Forgot password?',
+                  style: LeonTypography.sans(fontSize: 13, color: LeonColors.accent, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildLoginButton(),
+            const SizedBox(height: 16),
+            _buildFooterText(),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildErrorBanner() {
     return Container(
-      margin: const EdgeInsets.only(bottom: 20, top: 24),
+      margin: const EdgeInsets.only(bottom: 20),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: const Color(0xFFFEF2F2),
@@ -146,10 +246,7 @@ class _LoginScreenState extends State<LoginScreen> {
           Expanded(
             child: Text(
               _errorMessage!,
-              style: GoogleFonts.plusJakartaSans(
-                color: const Color(0xFFDC2626),
-                fontSize: 13,
-              ),
+              style: LeonTypography.sans(color: const Color(0xFFDC2626), fontSize: 13),
             ),
           ),
         ],
@@ -157,27 +254,23 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildEmailField() {
+  Widget _buildUsernameField() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 28),
-        Text('Email Address',
-            style: GoogleFonts.plusJakartaSans(
-                fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF374151))),
+        Text('Control panel username',
+            style: LeonTypography.mono(fontSize: 11, fontWeight: FontWeight.w600, color: LeonColors.secondary)),
         const SizedBox(height: 8),
         TextFormField(
-          controller: _emailController,
-          keyboardType: TextInputType.emailAddress,
+          controller: _usernameController,
           textInputAction: TextInputAction.next,
-          style: GoogleFonts.plusJakartaSans(color: const Color(0xFF111827), fontSize: 15),
-          decoration: InputDecoration(
-            hintText: 'Enter your email',
-            prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFF9CA3AF), size: 20),
+          style: LeonTypography.mono(color: LeonColors.ink, fontSize: 14),
+          decoration: const InputDecoration(
+            hintText: 'NSBMotors',
+            prefixIcon: Icon(Icons.person_outline, color: LeonColors.muted, size: 20),
           ),
           validator: (value) {
-            if (value == null || value.isEmpty) return 'Please enter your email';
-            if (!value.contains('@')) return 'Please enter a valid email';
+            if (value == null || value.isEmpty) return 'Please enter your username';
             return null;
           },
         ),
@@ -190,22 +283,21 @@ class _LoginScreenState extends State<LoginScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Password',
-            style: GoogleFonts.plusJakartaSans(
-                fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF374151))),
+            style: LeonTypography.mono(fontSize: 11, fontWeight: FontWeight.w600, color: LeonColors.secondary)),
         const SizedBox(height: 8),
         TextFormField(
           controller: _passwordController,
           obscureText: _obscurePassword,
           textInputAction: TextInputAction.done,
           onFieldSubmitted: (_) => _handleLogin(),
-          style: GoogleFonts.plusJakartaSans(color: const Color(0xFF111827), fontSize: 15),
+          style: LeonTypography.mono(color: LeonColors.ink, fontSize: 14),
           decoration: InputDecoration(
             hintText: 'Enter your password',
-            prefixIcon: const Icon(Icons.lock_outlined, color: Color(0xFF9CA3AF), size: 20),
+            prefixIcon: const Icon(Icons.lock_outlined, color: LeonColors.muted, size: 20),
             suffixIcon: IconButton(
               icon: Icon(
                 _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                color: const Color(0xFF9CA3AF),
+                color: LeonColors.muted,
                 size: 20,
               ),
               onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
@@ -225,38 +317,24 @@ class _LoginScreenState extends State<LoginScreen> {
       height: 52,
       child: ElevatedButton(
         onPressed: _isLoading ? null : _handleLogin,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _primary,
-          disabledBackgroundColor: _primary.withOpacity(0.6),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          elevation: 0,
-        ),
         child: _isLoading
             ? const SizedBox(
                 width: 22,
                 height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
+                child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
               )
-            : Text(
-                'Sign In',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
+            : Text('Sign In', style: LeonTypography.sans(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
       ),
     );
   }
 
   Widget _buildFooterText() {
     return Text(
-      'Sign in to access the NSB Motors management system',
+      'Mobile control panel only (username NSBMotors). '
+      'Machine and web use the sales account (developer). '
+      'Forgot password sends a reset link to the control panel email.',
       textAlign: TextAlign.center,
-      style: GoogleFonts.plusJakartaSans(fontSize: 12, color: const Color(0xFF9CA3AF)),
+      style: LeonTypography.sans(fontSize: 12, color: LeonColors.muted),
     );
   }
 }
